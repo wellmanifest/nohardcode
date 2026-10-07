@@ -12,6 +12,7 @@ import argparse
 import ast
 import fnmatch
 import json
+import os
 from pathlib import Path
 import re
 import sys
@@ -348,19 +349,27 @@ def audit_repository(
         "docs/**",
     ]
 
-    for p in target_dir.rglob("*"):
-        if not p.is_file():
-            continue
-        rel = str(p.relative_to(target_dir))
-        if is_excluded(rel, excl):
-            continue
-        if p.suffix in {".py", ".ts", ".js", ".json", ".sh", ".yaml", ".yml"}:
-            try:
-                content = p.read_text(encoding="utf-8", errors="replace")
-                v = scan_file_content(p, content, profile=profile)
-                all_violations.extend(v)
-            except Exception:
-                pass
+    for root, dirs, files in os.walk(target_dir):
+        # Prune excluded directories in-place before traversing
+        dirs[:] = [
+            d for d in dirs
+            if not is_excluded(str((Path(root) / d).relative_to(target_dir)), excl)
+            and not (d.startswith(".") and d != ".")
+            and d not in {"node_modules", "venv", ".venv", "__pycache__", "dist", "build"}
+        ]
+
+        for file_name in files:
+            p = Path(root) / file_name
+            rel = str(p.relative_to(target_dir))
+            if is_excluded(rel, excl):
+                continue
+            if p.suffix in {".py", ".ts", ".js", ".json", ".sh", ".yaml", ".yml"}:
+                try:
+                    content = p.read_text(encoding="utf-8", errors="replace")
+                    v = scan_file_content(p, content, profile=profile)
+                    all_violations.extend(v)
+                except Exception:
+                    pass
 
     return all_violations
 
