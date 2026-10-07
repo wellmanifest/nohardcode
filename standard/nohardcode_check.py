@@ -374,6 +374,7 @@ def main() -> int:
     args = parser.parse_args()
 
     policy_profile = args.profile
+    exclusions = None
     target_path = Path(args.target).resolve()
     policy_path = Path(args.policy) if args.policy else (target_path / "nohardcode-policy.json")
 
