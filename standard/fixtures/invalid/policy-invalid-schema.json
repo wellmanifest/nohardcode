@@ -1,0 +1,7 @@
+{
+  "schema": "invalid.schema/policy/v99",
+  "version": "0.1.0-dev",
+  "profile": "balanced",
+  "engine_bindings": {},
+  "rules": {}
+}

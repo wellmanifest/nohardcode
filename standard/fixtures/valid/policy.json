@@ -1,0 +1,86 @@
+{
+  "schema": "wellmanifest.nohardcode/policy/v1",
+  "version": "0.1.0-dev",
+  "profile": "balanced",
+  "engine_bindings": {
+    "llm": {
+      "enabled": true,
+      "provider": "subllm",
+      "model": "qwen2.5:14b",
+      "temperature": 0.1,
+      "timeout_ms": 2500
+    },
+    "vision_yolo": {
+      "enabled": true,
+      "model_path": "models/twinerd_yolo_v11.pt",
+      "confidence_threshold": 0.70
+    },
+    "ocr_tesseract": {
+      "enabled": true,
+      "languages": "pol+eng",
+      "confidence_threshold": 65.0
+    },
+    "rule_engine_jev": {
+      "enabled": true,
+      "policy_store_uri": "file://etc/policies/business_rules.jev.json"
+    },
+    "secrets_vault": {
+      "enabled": true,
+      "standard_ref": "wellmanifest/secrets@v1"
+    },
+    "env_dsl": {
+      "enabled": true,
+      "standard_ref": "wellmanifest/env-dsl@v1"
+    }
+  },
+  "rules": {
+    "NOHARDCODE-001": {
+      "enabled": true,
+      "severity": "warning",
+      "threshold": 5
+    },
+    "NOHARDCODE-002": {
+      "enabled": true,
+      "severity": "warning"
+    },
+    "NOHARDCODE-003": {
+      "enabled": true,
+      "severity": "warning",
+      "threshold": 60.0
+    },
+    "NOHARDCODE-004": {
+      "enabled": true,
+      "severity": "warning",
+      "threshold": 3
+    },
+    "NOHARDCODE-005": {
+      "enabled": true,
+      "severity": "error"
+    },
+    "NOHARDCODE-006": {
+      "enabled": true,
+      "severity": "error"
+    },
+    "NOHARDCODE-007": {
+      "enabled": true,
+      "severity": "error"
+    },
+    "NOHARDCODE-008": {
+      "enabled": true,
+      "severity": "warning"
+    },
+    "NOHARDCODE-009": {
+      "enabled": true,
+      "severity": "error"
+    },
+    "NOHARDCODE-010": {
+      "enabled": true,
+      "severity": "warning"
+    }
+  },
+  "exclusions": [
+    "tests/fixtures/**",
+    "standard/fixtures/**",
+    "docs/**"
+  ]
+}

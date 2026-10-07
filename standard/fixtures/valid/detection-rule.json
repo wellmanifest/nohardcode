@@ -1,0 +1,13 @@
+{
+  "rule_id": "NOHARDCODE-001",
+  "category": "natural_language_keywords",
+  "description": "Detection of rigid static keyword array literals for natural language dispatch without semantic routing",
+  "severity": "warning",
+  "target_replacement": "wellmanifest/nl-dsl-llm semantic router or local LLM evaluator",
+  "wellmanifest_standard": "wellmanifest/nl-dsl-llm@v1",
+  "matcher": {
+    "kind": "ast",
+    "ast_node_types": ["List", "Tuple", "Set"],
+    "threshold": 5
+  }
+}

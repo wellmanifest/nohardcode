@@ -1,0 +1,45 @@
+{
+  "schema": "wellmanifest.nohardcode/policy/v1",
+  "version": "0.1.0-dev",
+  "profile": "balanced",
+  "engine_bindings": {
+    "llm": {
+      "enabled": true,
+      "provider": "subllm"
+    },
+    "vision_yolo": {
+      "enabled": true
+    },
+    "ocr_tesseract": {
+      "enabled": true
+    },
+    "rule_engine_jev": {
+      "enabled": true
+    },
+    "secrets_vault": {
+      "enabled": true
+    },
+    "env_dsl": {
+      "enabled": true
+    }
+  },
+  "rules": {
+    "NOHARDCODE-001": { "enabled": true, "severity": "warning" },
+    "NOHARDCODE-002": { "enabled": true, "severity": "warning" },
+    "NOHARDCODE-003": { "enabled": true, "severity": "warning" },
+    "NOHARDCODE-004": { "enabled": true, "severity": "warning" },
+    "NOHARDCODE-005": { "enabled": true, "severity": "error" },
+    "NOHARDCODE-006": { "enabled": true, "severity": "error" },
+    "NOHARDCODE-007": { "enabled": true, "severity": "error" },
+    "NOHARDCODE-008": { "enabled": true, "severity": "warning" },
+    "NOHARDCODE-009": { "enabled": true, "severity": "error" },
+    "NOHARDCODE-010": { "enabled": true, "severity": "warning" }
+  },
+  "exclusions": [
+    "standard/**",
+    "tests/**",
+    "fixtures/**",
+    "docs/**",
+    ".git/**"
+  ]
+}

@@ -1,0 +1,102 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://wellmanifest.com/schemas/nohardcode-policy.schema.json",
+  "title": "Wellmanifest No-Hardcode Policy",
+  "description": "Defines repository-level thresholds, dynamic engine bindings, and allowed exceptions for unhardcoding.",
+  "type": "object",
+  "required": ["schema", "version", "engine_bindings", "rules"],
+  "properties": {
+    "schema": {
+      "type": "string",
+      "const": "wellmanifest.nohardcode/policy/v1"
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(-[a-z0-9.]+)?$"
+    },
+    "profile": {
+      "type": "string",
+      "enum": ["strict", "balanced", "permissive"],
+      "default": "balanced"
+    },
+    "engine_bindings": {
+      "type": "object",
+      "description": "Configured dynamic technologies replacing hardcoded patterns",
+      "properties": {
+        "llm": {
+          "type": "object",
+          "properties": {
+            "enabled": { "type": "boolean", "default": true },
+            "provider": { "type": "string", "enum": ["subllm", "ollama", "direct", "none"] },
+            "model": { "type": "string" },
+            "temperature": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
+            "timeout_ms": { "type": "integer", "default": 2000 }
+          },
+          "required": ["enabled"]
+        },
+        "vision_yolo": {
+          "type": "object",
+          "properties": {
+            "enabled": { "type": "boolean", "default": true },
+            "model_path": { "type": "string" },
+            "confidence_threshold": { "type": "number", "minimum": 0.0, "maximum": 1.0, "default": 0.65 }
+          },
+          "required": ["enabled"]
+        },
+        "ocr_tesseract": {
+          "type": "object",
+          "properties": {
+            "enabled": { "type": "boolean", "default": true },
+            "languages": { "type": "string", "default": "pol+eng" },
+            "confidence_threshold": { "type": "number", "default": 60.0 }
+          },
+          "required": ["enabled"]
+        },
+        "rule_engine_jev": {
+          "type": "object",
+          "properties": {
+            "enabled": { "type": "boolean", "default": true },
+            "policy_store_uri": { "type": "string" }
+          },
+          "required": ["enabled"]
+        },
+        "secrets_vault": {
+          "type": "object",
+          "properties": {
+            "enabled": { "type": "boolean", "default": true },
+            "standard_ref": { "type": "string", "default": "wellmanifest/secrets@v1" }
+          },
+          "required": ["enabled"]
+        },
+        "env_dsl": {
+          "type": "object",
+          "properties": {
+            "enabled": { "type": "boolean", "default": true },
+            "standard_ref": { "type": "string", "default": "wellmanifest/env-dsl@v1" }
+          },
+          "required": ["enabled"]
+        }
+      },
+      "additionalProperties": false
+    },
+    "rules": {
+      "type": "object",
+      "description": "Rule enablement and severity overrides",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "enabled": { "type": "boolean" },
+          "severity": { "type": "string", "enum": ["error", "warning", "info"] },
+          "threshold": { "type": ["integer", "number"] }
+        },
+        "required": ["enabled", "severity"]
+      }
+    },
+    "exclusions": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Glob patterns excluded from unhardcode audit (e.g. fixtures, test mocks)"
+    }
+  },
+  "additionalProperties": false
+}

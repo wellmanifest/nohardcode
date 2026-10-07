@@ -1,0 +1,10 @@
+{
+  "rule_id": "NOHARDCODE-002",
+  "category": "unknown_unsupported_category",
+  "description": "Unsupported category",
+  "severity": "error",
+  "target_replacement": "YOLO UI detection",
+  "matcher": {
+    "kind": "regex"
+  }
+}

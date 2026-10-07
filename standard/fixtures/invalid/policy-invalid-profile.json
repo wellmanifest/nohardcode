@@ -1,0 +1,7 @@
+{
+  "schema": "wellmanifest.nohardcode/policy/v1",
+  "version": "0.1.0-dev",
+  "profile": "super_lax_unsupported",
+  "engine_bindings": {},
+  "rules": {}
+}

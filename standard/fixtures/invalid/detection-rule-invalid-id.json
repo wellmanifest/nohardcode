@@ -1,0 +1,10 @@
+{
+  "rule_id": "BAD-RULE-XYZ",
+  "category": "screen_coordinates",
+  "description": "Invalid rule ID pattern",
+  "severity": "error",
+  "target_replacement": "YOLO UI detection",
+  "matcher": {
+    "kind": "regex"
+  }
+}
