@@ -3,9 +3,9 @@
   "schema": "wellmanifest.dsl/manifest/v1",
   "id": "wellmanifest.nohardcode",
   "name": "Wellmanifest No-Hardcode Standard",
-  "version": "0.1.0-dev",
+  "version": "0.2.0-dev",
   "status": "experimental",
-  "purpose": "Normative standard for identifying, classifying, and eliminating hardcoded data, brittle heuristics, static coordinates, and rigid keyword lists by replacing them with proven dynamic technologies (JEV, LLM, Tesseract OCR, YOLO, Vaults, and env-dsl)",
+  "purpose": "Normative standard for identifying, classifying, and eliminating hardcoded data, brittle heuristics, static coordinates, rigid keyword lists, and brittle algorithms by replacing them with adaptive dynamic technologies (JEV, LLM, Tesseract OCR, YOLO, Vaults, env-dsl, adaptive backoff, schema extractors, capability model routers, and DAG planners)",
   "domain": "code-quality-and-dynamic-adaptation",
   "owners": [
     {

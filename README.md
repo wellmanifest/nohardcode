@@ -1,8 +1,8 @@
 # wellmanifest/nohardcode
 
-Normative Wellmanifest domain pack for **identifying, classifying, and eliminating hardcoded data**, brittle heuristics, static coordinates, rigid keyword lists, and unmanaged constants by replacing them with proven dynamic technologies (JEV, LLM, Tesseract OCR, YOLO, Secrets Vaults, and env-dsl).
+Normative Wellmanifest domain pack for **identifying, classifying, and eliminating hardcoded data**, brittle heuristics, static coordinates, rigid keyword lists, and brittle algorithms by replacing them with proven dynamic and adaptive technologies (JEV, LLM, Tesseract OCR, YOLO, Secrets Vaults, env-dsl, adaptive latency governors, schema extractors, capability model routers, and DAG planners).
 
-Status: `0.1.0-dev` — normative vocabulary, schemas, taxonomy, AST audit engine, and conformance test suite.
+Status: `0.2.0-dev` — normative vocabulary, schemas, taxonomy, AST audit engine, and conformance test suite.
 
 ---
 
@@ -14,6 +14,9 @@ Hardcoding is one of the primary drivers of brittle systems, automation failures
 - Plaintext API keys and secrets lead to critical credential leakage in version control.
 - Hardcoded IP addresses and ports prevent containerization, dynamic port allocation, and multi-node mesh networking.
 - Nested multi-branch `if/elif` decision logic obfuscates business rules and requires code redeployments for policy changes.
+- Hardcoded timeouts and sleep calls trigger premature failures under load or waste throughput.
+- Hardcoded model strings and provider APIs break upon vendor deprecations and prevent offline operation.
+- Hardcoded display numbers (`:0`) and CUDA device targets fail in headless containers and CPU-only nodes.
 
 `wellmanifest/nohardcode` defines the standard for **dynamic, resilient, and adaptive software construction**.
 
@@ -35,6 +38,9 @@ Hardcoding is one of the primary drivers of brittle systems, automation failures
 | **Runtime Isolation & Path Portability** | `wellmanifest/account-runtime` | Bounded user workspace, sandboxed profiles, dynamic home directories |
 | **Declarative Process URIs** | `wellmanifest/poa` | `proc://...` execution contracts replacing raw shell scripts |
 | **Natural Language & Intent Models** | `wellmanifest/nl-dsl-llm` | Formal grammar and LLM intent translation contracts |
+| **Adaptive Performance & Latency Budgets** | `wellmanifest/performance` | RTT tracking, exponential jitter, dynamic timeouts and token governors |
+| **Autonomous Self-Healing Loops** | `wellmanifest/repair-lifecycle` | Reactive plan-act-observe-diagnose-repair execution loops |
+| **Multi-Agent Decision Governance** | `wellmanifest/agent` | Capability-based agent routing and bandit feedback prioritization |
 
 ---
 
@@ -52,6 +58,13 @@ Hardcoding is one of the primary drivers of brittle systems, automation failures
 | `NOHARDCODE-008` | Test Data & Fixtures | Real personal data (PII) in mocks | Deterministic masking and pseudonymization (`wellmanifest/anonym`) |
 | `NOHARDCODE-009` | Filesystem Paths | Hardcoded user paths (e.g. `/home/username`) | Standard APIs (`Path.home()`, `XDG_*`, `wellmanifest/account-runtime`) |
 | `NOHARDCODE-010` | Code Duplication | Copy-pasted helper functions across repos | Shared packages under `packages/` (`wellmanifest/reuse`) |
+| `NOHARDCODE-011` | Thresholds & Timeouts | Hardcoded sleeps `sleep(5)` & fixed retry counts | Adaptive Latency Backoff & Dynamic Rate Governors (`wellmanifest/performance`) |
+| `NOHARDCODE-012` | Schema & DOM Extraction | Fragile single-path dict access & rigid regex | Resilient Multi-Stage Tree Visitors & LLM Healing (`wellmanifest/nl-dsl-llm`) |
+| `NOHARDCODE-013` | Model & Engine Routing | Hardcoded model strings (`model="gpt-4o"`) | Capability-Based Model Router & Fallback Cascades (`wellmanifest/llm`) |
+| `NOHARDCODE-014` | Procedural Workflows | Rigid step-by-step sequences & fixed loops | Goal-Driven DAG Planners & Self-Healing Loops (`wellmanifest/poa`) |
+| `NOHARDCODE-015` | Environment & Hardware | Hardcoded `DISPLAY=":0"`, resolutions, `"cuda:0"` | Dynamic Hardware & Socket Capability Discovery (`wellmanifest/account-runtime`) |
+| `NOHARDCODE-016` | Phonetics & Dictionaries | Static phonetic typo maps & literal equality | Fuzzy Phonetic Algorithms & Vector Embeddings (`wellmanifest/nl-dsl-llm`) |
+| `NOHARDCODE-017` | Scoring & Prioritization | Fixed linear scoring equations & static weights | Online Preference Learning & Multi-Armed Bandits (`wellmanifest/saas-lifecycle`) |
 
 ---
 

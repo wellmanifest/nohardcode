@@ -22,7 +22,14 @@
         "log_and_error_strings",
         "pii_and_fixtures",
         "filesystem_paths",
-        "code_duplication"
+        "code_duplication",
+        "adaptive_thresholds_and_timeouts",
+        "rigid_schema_and_dom_parsers",
+        "model_and_provider_bindings",
+        "procedural_workflows_and_sequences",
+        "hardware_and_environment_assumptions",
+        "phonetic_and_fuzzy_matching",
+        "static_prioritization_and_scoring"
       ]
     },
     "description": { "type": "string" },

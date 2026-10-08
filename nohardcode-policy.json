@@ -1,6 +1,6 @@
 {
   "schema": "wellmanifest.nohardcode/policy/v1",
-  "version": "0.1.0-dev",
+  "version": "0.2.0-dev",
   "profile": "balanced",
   "engine_bindings": {
     "llm": {
@@ -21,6 +21,36 @@
     },
     "env_dsl": {
       "enabled": true
+    },
+    "adaptive_budget": {
+      "enabled": true,
+      "strategy": "exponential_jitter"
+    },
+    "schema_extractor": {
+      "enabled": true,
+      "fallback_to_llm": true,
+      "tolerant_tree_traversal": true
+    },
+    "model_router": {
+      "enabled": true,
+      "routing_tier": "capability"
+    },
+    "dag_planner": {
+      "enabled": true,
+      "standard_ref": "wellmanifest/poa@v1"
+    },
+    "hardware_probe": {
+      "enabled": true,
+      "probe_accelerator": true,
+      "dynamic_display_detection": true
+    },
+    "fuzzy_phonetic": {
+      "enabled": true,
+      "algorithm": "hybrid"
+    },
+    "adaptive_ranking": {
+      "enabled": true,
+      "strategy": "thompson_sampling"
     }
   },
   "rules": {
@@ -33,7 +63,14 @@
     "NOHARDCODE-007": { "enabled": true, "severity": "error" },
     "NOHARDCODE-008": { "enabled": true, "severity": "warning" },
     "NOHARDCODE-009": { "enabled": true, "severity": "error" },
-    "NOHARDCODE-010": { "enabled": true, "severity": "warning" }
+    "NOHARDCODE-010": { "enabled": true, "severity": "warning" },
+    "NOHARDCODE-011": { "enabled": true, "severity": "warning" },
+    "NOHARDCODE-012": { "enabled": true, "severity": "warning" },
+    "NOHARDCODE-013": { "enabled": true, "severity": "error" },
+    "NOHARDCODE-014": { "enabled": true, "severity": "warning" },
+    "NOHARDCODE-015": { "enabled": true, "severity": "error" },
+    "NOHARDCODE-016": { "enabled": true, "severity": "warning" },
+    "NOHARDCODE-017": { "enabled": true, "severity": "warning" }
   },
   "exclusions": [
     "standard/**",

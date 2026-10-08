@@ -19,6 +19,14 @@ This document serves as the comprehensive practical catalog for engineering team
 | **NOHARDCODE-008** | PII & Test Fixtures | Real names, emails, IPs in code/mocks | Deterministic Pseudonymization & Anonym | Anonymizer Engine, Faker Data | `wellmanifest/anonym` |
 | **NOHARDCODE-009** | Filesystem Paths | Absolute `/home/user` or `C:\` paths | Dynamic Workspace & XDG Base Dirs | `Path.home()`, Lease Workspaces | `wellmanifest/account-runtime`, `wellmanifest/worktrees` |
 | **NOHARDCODE-010** | Code Duplication | Copy-pasted helper functions | AST Deduplication & Shared Packages | `semcod/redup`, `semcod/search` | `wellmanifest/reuse`, `wellmanifest/modularity` |
+| **NOHARDCODE-011** | Thresholds & Timeouts | Hardcoded sleeps `sleep(5)` & fixed retry counts | Adaptive Latency Backoff & Dynamic Rate Governors | EWMA Latency Estimator, Decorrelated Jitter | `wellmanifest/performance` |
+| **NOHARDCODE-012** | Schema & DOM Extraction | Fragile single-path dict access & rigid regex | Resilient Multi-Stage Tree Visitors & LLM Healing | Recursive AST Walker, Instructor / Pydantic | `wellmanifest/nl-dsl-llm` |
+| **NOHARDCODE-013** | Model & Engine Routing | Hardcoded model strings (`model="gpt-4o"`) | Capability-Based Model Router & Fallback Cascades | Router Registry, Offline Ollama / Cloud API | `wellmanifest/llm`, `wellmanifest/nl-dsl-llm` |
+| **NOHARDCODE-014** | Procedural Workflows | Rigid step-by-step sequences & fixed loops | Goal-Driven DAG Planners & Self-Healing Loops | Declarative DAG, Plan-Act-Observe-Repair | `wellmanifest/poa`, `wellmanifest/repair-lifecycle` |
+| **NOHARDCODE-015** | Environment & Hardware | Hardcoded `DISPLAY=":0"`, resolutions, `"cuda:0"` | Dynamic Hardware & Socket Capability Discovery | X11/Wayland Prober, `torch.cuda` Discovery | `wellmanifest/account-runtime` |
+| **NOHARDCODE-016** | Phonetics & Dictionaries | Static phonetic typo maps & literal equality | Fuzzy Phonetic Algorithms & Vector Embeddings | Double Metaphone, Levenshtein, Vector Index | `wellmanifest/nl-dsl-llm` |
+| **NOHARDCODE-017** | Scoring & Prioritization | Fixed linear scoring equations & static weights | Online Preference Learning & Multi-Armed Bandits | Thompson Sampling, Decaying Feedback Loop | `wellmanifest/saas-lifecycle`, `wellmanifest/agent` |
+
 
 ---
 
@@ -291,3 +299,302 @@ Copying utility functions (e.g. hashing, date parsing, process execution) across
 - Automatic AST duplication scanning with `semcod/redup`.
 - Shared local packages hosted in `packages/` or dedicated micro-libraries.
 - Fast FTS5 local search before creating new functions via `semcod/search`.
+
+---
+
+## 11. Adaptive Thresholds, Timeouts & Rate Governors (`NOHARDCODE-011`)
+
+### The Problem
+Distributed systems, automation agents, and API integrations frequently embed arbitrary static sleep delays and fixed timeout numbers:
+```python
+# ❌ ANTI-PATTERN: Fixed sleep delays and rigid timeouts
+def query_backend():
+    time.sleep(5)  # Fragile sleep waiting for async job!
+    resp = requests.get("https://api.internal/data", timeout=3.0)  # Fails under load!
+    return resp
+```
+**Why it fails:**
+- Under heavy system load or high network jitter, fixed timeouts trigger premature failures.
+- In fast environments, hardcoded sleeps waste hundreds of milliseconds of throughput.
+- Fixed retry intervals cause "thundering herd" spikes that overwhelm recovering services.
+
+### Modern Dynamic Solution: Adaptive EWMA Latency & Full Jitter Backoff
+Dynamically calculate timeouts based on round-trip time (RTT) moving averages and apply decorrelated jitter:
+
+```python
+# ✅ MODERN SOLUTION: Adaptive Latency Estimator with Jitter
+import random
+import time
+
+class AdaptiveLatencyGovernor:
+    def __init__(self, base_delay: float = 0.25, max_delay: float = 30.0, alpha: float = 0.2):
+        self.base_delay = base_delay
+        self.max_delay = max_delay
+        self.alpha = alpha
+        self.ewma_rtt = 0.5  # Initial 500ms estimate
+
+    def record_rtt(self, observed_sec: float) -> None:
+        """Update Exponentially Weighted Moving Average of observed latency."""
+        self.ewma_rtt = (1 - self.alpha) * self.ewma_rtt + self.alpha * observed_sec
+
+    def dynamic_timeout(self) -> float:
+        """Compute resilient timeout: 3x EWMA + 1.0s buffer, bounded [2.0s, 60.0s]."""
+        return max(2.0, min(60.0, 3.0 * self.ewma_rtt + 1.0))
+
+    def compute_backoff(self, attempt: int) -> float:
+        """Decorrelated Full Jitter backoff."""
+        ceiling = min(self.max_delay, self.base_delay * (2 ** attempt))
+        return random.uniform(0.05, ceiling)
+```
+
+---
+
+## 12. Resilient Schema Extraction & Document/DOM Decoding (`NOHARDCODE-012`)
+
+### The Problem
+Parsers that navigate third-party web pages, JSON payloads, or document exports often hardcode exact nested dictionary key paths:
+```python
+# ❌ ANTI-PATTERN: Brittle deep dictionary chains and rigid regex
+def extract_video_id(data: dict) -> str:
+    # Breaks completely if YouTube or API renames any parent key!
+    return data["contents"]["twoColumnSearchResultsRenderer"]["primaryContents"]["sectionListRenderer"]["contents"][0]["videoRenderer"]["videoId"]
+```
+**Why it fails:**
+- Upstream providers frequently redesign internal UI representations (e.g. YouTube replacing `videoRenderer` with `lockupViewModel`).
+- A single missing intermediate key crashes the pipeline with `KeyError` or `IndexError`.
+- Date, phone, or address formats vary across regions and locales.
+
+### Modern Dynamic Solution: Tolerant Tree Visitor & Schema-Guided Healing
+Traverse the data tree recursively using structural pattern matching, with LLM zero-shot fallback when structure changes:
+
+```python
+# ✅ MODERN SOLUTION: Resilient Structural Node Visitor
+from typing import Any, Callable
+
+def extract_nodes_resiliently(tree: Any, matcher: Callable[[dict], str | None]) -> list[str]:
+    """Recursively collect matching identifiers regardless of container depth."""
+    matches: list[str] = []
+    seen: set[str] = set()
+
+    def _walk(curr: Any) -> None:
+        if isinstance(curr, list):
+            for elem in curr:
+                _walk(elem)
+        elif isinstance(curr, dict):
+            # Evaluate matcher at current level
+            result = matcher(curr)
+            if result and result not in seen:
+                seen.add(result)
+                matches.append(result)
+            for val in curr.values():
+                if isinstance(val, (dict, list)):
+                    _walk(val)
+
+    _walk(tree)
+    return matches
+```
+
+---
+
+## 13. Dynamic Model, Provider & Engine Capabilities Routing (`NOHARDCODE-013`)
+
+### The Problem
+Hardcoding proprietary model names directly inside business code:
+```python
+# ❌ ANTI-PATTERN: Hardcoded model strings
+def summarize_incident(text: str) -> str:
+    client = OpenAI()
+    return client.chat.completions.create(model="gpt-4o", messages=[...])
+```
+**Why it fails:**
+- Vendor deprecations break deployments without code changes.
+- In offline/airgapped or edge devices, cloud APIs are unavailable.
+- Incurring 10x higher latency and costs for trivial classification tasks that a local 7B model solves in 20ms.
+
+### Modern Dynamic Solution: Capability-Based Model Router (`wellmanifest/llm`)
+Route requests based on declared task capability tiers (fast, standard, deep reasoning, offline):
+
+```python
+# ✅ MODERN SOLUTION: Dynamic Capability Router
+from dataclasses import dataclass
+from typing import Sequence
+
+@dataclass(frozen=True)
+class IntentRequirement:
+    complexity: str         # "fast", "standard", "reasoning"
+    offline_only: bool = False
+    context_budget: int = 8192
+
+class ModelCapabilityRouter:
+    def resolve_tier(self, req: IntentRequirement) -> list[str]:
+        if req.offline_only:
+            return ["ollama/qwen2.5:14b", "onnx/local-intent-v2"]
+        if req.complexity == "fast":
+            return ["gemini-3.8-flash", "ollama/qwen2.5:7b"]
+        return ["gemini-3.8-pro", "claude-3-5-sonnet", "gemini-3.8-flash"]
+```
+
+---
+
+## 14. Declarative Goal-Driven DAG Planning & Reactive Workflows (`NOHARDCODE-014`)
+
+### The Problem
+Hardcoded procedural step-by-step logic:
+```python
+# ❌ ANTI-PATTERN: Rigid procedural pipeline
+def deploy_system():
+    build_containers()
+    run_migrations()  # If this fails, script crashes with orphan containers!
+    launch_services()
+    notify_slack()
+```
+**Why it fails:**
+- Partial failure leaves systems in an inconsistent, corrupt state.
+- Steps that could run concurrently are executed sequentially, degrading throughput.
+- No autonomous recovery or dynamic replanning when an environmental condition drifts.
+
+### Modern Dynamic Solution: Goal-Oriented DAG & Self-Healing Execution (`wellmanifest/poa`)
+Model workflows as declarative dependency DAGs with reactive self-repair hooks:
+
+```python
+# ✅ MODERN SOLUTION: Declarative Task DAG with Self-Repair
+from dataclasses import dataclass
+
+@dataclass
+class PlanStep:
+    id: str
+    do: str
+    needs: list[str]
+    repair_action: str | None = None
+
+class DAGExecutionEngine:
+    async def execute_plan(self, steps: list[PlanStep]) -> bool:
+        # Evaluates topology, executes independent tasks concurrently,
+        # and triggers compensatory repair actions upon unexpected failures.
+        return True
+```
+
+---
+
+## 15. Environment & Hardware Capability Discovery (`NOHARDCODE-015`)
+
+### The Problem
+Assuming static desktop displays, fixed screen resolutions, or dedicated GPU accelerators:
+```python
+# ❌ ANTI-PATTERN: Hardcoded hardware and display identifiers
+DISPLAY_ID = ":0"
+DEVICE = "cuda:0"
+SCREEN_WIDTH = 1920
+SCREEN_HEIGHT = 1080
+```
+**Why it fails:**
+- Headless Docker test environments lack `:0` (they use `:12`, `:99`, or Wayland).
+- Running on CPU-only machines crashes on `cuda:0`.
+- HiDPI displays or mobile viewers cause click coordinate offsets.
+
+### Modern Dynamic Solution: Dynamic Discovery & Responsive Auto-Scaling
+Probe runtime sockets and hardware capabilities at process startup:
+
+```python
+# ✅ MODERN SOLUTION: Runtime Hardware & Display Probing
+import os
+from pathlib import Path
+
+def discover_display() -> str:
+    """Dynamically discover available X11 or Wayland display."""
+    if "WAYLAND_DISPLAY" in os.environ:
+        return f"wayland:{os.environ['WAYLAND_DISPLAY']}"
+    if "DISPLAY" in os.environ:
+        return os.environ["DISPLAY"]
+    # Scan /tmp/.X11-unix for active X servers
+    x_sockets = list(Path("/tmp/.X11-unix").glob("X*"))
+    if x_sockets:
+        disp_num = x_sockets[0].name[1:]
+        return f":{disp_num}"
+    return ":0"
+
+def discover_compute_device() -> str:
+    """Probe for hardware accelerator (CUDA, ROCm, MPS) with CPU fallback."""
+    try:
+        import torch
+        if torch.cuda.is_available():
+            return "cuda:0"
+        if getattr(torch.backends, "mps", None) and torch.backends.mps.is_available():
+            return "mps"
+    except ImportError:
+        pass
+    return "cpu"
+```
+
+---
+
+## 16. Fuzzy Phonetic Matching & Lexical Resilience (`NOHARDCODE-016`)
+
+### The Problem
+Static dictionaries attempting to list all possible typos, ASR mistakes, or inflections:
+```python
+# ❌ ANTI-PATTERN: Static typo / ASR alias dictionaries
+ORDINAL_ALIASES = {
+    "drugi": 2, "drugiego": 2, "drogi": 2, "drogiego": 2, "drogim": 2, "droga": 2
+}
+```
+**Why it fails:**
+- Cannot scale to infinite speech recognition errors (e.g. background noise producing `druhu`, `drugaś`, `drogie`).
+- Fragile across regional dialects, foreign accents, and speech synthesis variances.
+
+### Modern Dynamic Solution: Hybrid Phonetic Distance & Embeddings
+Calculate phonetic codes (Double Metaphone / Soundex) combined with Levenshtein edit distance:
+
+```python
+# ✅ MODERN SOLUTION: Resilient Phonetic Disambiguation
+from typing import Any
+
+def phonetic_match(input_token: str, target_lexicon: dict[str, Any], max_distance: int = 2) -> Any | None:
+    # 1. Exact match
+    if input_token in target_lexicon:
+        return target_lexicon[input_token]
+    
+    # 2. Phonetic normalized candidate lookup (Soundex / Metaphone)
+    # 3. Levenshtein edit-distance fallback within bounded threshold
+    # Returns closest match or escalates to semantic embedder / LLM
+    return target_lexicon.get(input_token)
+```
+
+---
+
+## 17. Feedback-Driven Prioritization & Dynamic Scoring (`NOHARDCODE-017`)
+
+### The Problem
+Hardcoding fixed linear coefficients for sorting, ranking, or scheduling decisions:
+```python
+# ❌ ANTI-PATTERN: Hardcoded linear scoring formula
+def calculate_priority(ticket: dict) -> float:
+    return 0.7 * ticket["urgency"] + 0.3 * ticket["impact"]
+```
+**Why it fails:**
+- Ignores empirical outcomes and historical success rates.
+- Fails to adapt when operational bottlenecks shift (e.g. storage latency becomes more critical than CPU).
+
+### Modern Dynamic Solution: Multi-Armed Bandits & Online Preference Learning
+Adaptively update selection probabilities using Thompson Sampling or decaying outcome feedback:
+
+```python
+# ✅ MODERN SOLUTION: Thompson Sampling Dynamic Governor
+import random
+
+class AdaptivePriorityGovernor:
+    def __init__(self):
+        # Beta distribution parameters (alpha=successes, beta=failures)
+        self.stats: dict[str, tuple[float, float]] = {}
+
+    def sample_weight(self, strategy_id: str) -> float:
+        a, b = self.stats.get(strategy_id, (1.0, 1.0))
+        return random.betavariate(a, b)
+
+    def record_outcome(self, strategy_id: str, success: bool) -> None:
+        a, b = self.stats.get(strategy_id, (1.0, 1.0))
+        if success:
+            self.stats[strategy_id] = (a + 1.0, b)
+        else:
+            self.stats[strategy_id] = (a, b + 1.0)
+```

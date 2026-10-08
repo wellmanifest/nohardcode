@@ -75,6 +75,68 @@
             "standard_ref": { "type": "string", "default": "wellmanifest/env-dsl@v1" }
           },
           "required": ["enabled"]
+        },
+        "adaptive_budget": {
+          "type": "object",
+          "properties": {
+            "enabled": { "type": "boolean", "default": true },
+            "strategy": { "type": "string", "enum": ["ewma_latency", "exponential_jitter", "circuit_breaker", "dynamic_token_budget"] },
+            "max_backoff_sec": { "type": "number", "default": 60.0 }
+          },
+          "required": ["enabled"]
+        },
+        "schema_extractor": {
+          "type": "object",
+          "properties": {
+            "enabled": { "type": "boolean", "default": true },
+            "fallback_to_llm": { "type": "boolean", "default": true },
+            "tolerant_tree_traversal": { "type": "boolean", "default": true }
+          },
+          "required": ["enabled"]
+        },
+        "model_router": {
+          "type": "object",
+          "properties": {
+            "enabled": { "type": "boolean", "default": true },
+            "routing_tier": { "type": "string", "enum": ["capability", "cost_latency", "offline_first"] },
+            "fallback_chain": { "type": "array", "items": { "type": "string" } }
+          },
+          "required": ["enabled"]
+        },
+        "dag_planner": {
+          "type": "object",
+          "properties": {
+            "enabled": { "type": "boolean", "default": true },
+            "standard_ref": { "type": "string", "default": "wellmanifest/poa@v1" },
+            "self_repair_loop": { "type": "boolean", "default": true }
+          },
+          "required": ["enabled"]
+        },
+        "hardware_probe": {
+          "type": "object",
+          "properties": {
+            "enabled": { "type": "boolean", "default": true },
+            "probe_accelerator": { "type": "boolean", "default": true },
+            "dynamic_display_detection": { "type": "boolean", "default": true }
+          },
+          "required": ["enabled"]
+        },
+        "fuzzy_phonetic": {
+          "type": "object",
+          "properties": {
+            "enabled": { "type": "boolean", "default": true },
+            "algorithm": { "type": "string", "enum": ["double_metaphone", "levenshtein", "embedding_cosine", "hybrid"] },
+            "max_distance": { "type": "integer", "default": 2 }
+          },
+          "required": ["enabled"]
+        },
+        "adaptive_ranking": {
+          "type": "object",
+          "properties": {
+            "enabled": { "type": "boolean", "default": true },
+            "strategy": { "type": "string", "enum": ["thompson_sampling", "ucb1", "decaying_feedback"] }
+          },
+          "required": ["enabled"]
         }
       },
       "additionalProperties": false

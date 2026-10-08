@@ -70,6 +70,7 @@ def test_code_smell_scanner() -> None:
     # Test synthetic snippet with violations
     smelly_code = """
 import pyautogui
+import time
 
 KEYWORDS = ["uruchom", "włącz", "graj", "otwórz", "startuj", "odtwarzaj"]
 
@@ -78,11 +79,24 @@ def bad_worker():
     pyautogui.click(500, 200)
     print("starting worker on localhost:7070")
     home_dir = "/home/tom/data"
+    time.sleep(10)
+    model = "gpt-4"
+    device = "cuda:0"
 """
     violations = scan_file_content(Path("worker_service.py"), smelly_code, profile="strict")
     rule_ids = {v.rule_id for v in violations}
 
-    expected_rules = {"NOHARDCODE-001", "NOHARDCODE-002", "NOHARDCODE-005", "NOHARDCODE-006", "NOHARDCODE-007", "NOHARDCODE-009"}
+    expected_rules = {
+        "NOHARDCODE-001",
+        "NOHARDCODE-002",
+        "NOHARDCODE-005",
+        "NOHARDCODE-006",
+        "NOHARDCODE-007",
+        "NOHARDCODE-009",
+        "NOHARDCODE-011",
+        "NOHARDCODE-013",
+        "NOHARDCODE-015",
+    }
     missing = expected_rules - rule_ids
     if missing:
         raise ConformanceError("SCANNER_FAILURE", f"AST scanner missed expected rules: {missing}")

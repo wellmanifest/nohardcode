@@ -30,6 +30,9 @@ This standard does not reinvent runtime tools (it does not build its own OCR eng
 | **Runtime Isolation & Path Portability** | `wellmanifest/account-runtime` | Bounded user workspace, sandboxed profiles, dynamic home directories |
 | **Declarative Process URIs** | `wellmanifest/poa` | `proc://...` execution contracts replacing raw shell scripts |
 | **Natural Language & Intent Models** | `wellmanifest/nl-dsl-llm` | Formal grammar and LLM intent translation contracts |
+| **Adaptive Performance & Latency Budgets** | `wellmanifest/performance` | RTT tracking, exponential jitter, dynamic timeouts and token governors |
+| **Autonomous Self-Healing Loops** | `wellmanifest/repair-lifecycle` | Reactive plan-act-observe-diagnose-repair execution loops |
+| **Multi-Agent Decision Governance** | `wellmanifest/agent` | Capability-based agent routing and bandit feedback prioritization |
 
 ---
 
@@ -40,10 +43,10 @@ flowchart TD
     A["Codebase Source Files\n(.py, .ts, .rs, .sh)"] --> B["nohardcode_check.py\n(AST & Pattern Scanner)"]
     B --> C{"Hardcoded Smells Found?"}
     C -- "No" --> D["GOV-PASS\n(Conformant)"]
-    C -- "Yes" --> E["Violation Report\n(NOHARDCODE-001..010)"]
+    C -- "Yes" --> E["Violation Report\n(NOHARDCODE-001..017)"]
     E --> F["Planfile Ticket Generator\n(planfile-tickets.yaml)"]
     F --> G["Autonomous Agent Handoff\n(antigravity / koru / willman)"]
-    G --> H["Apply Dynamic Replacement\n(LLM / JEV / YOLO / Tesseract / Vault)"]
+    G --> H["Apply Dynamic Replacement\n(LLM / JEV / YOLO / Tesseract / Vault / Adapters)"]
     H --> I["Test & Governance Check\n(pytest / ./project/governance-check.sh)"]
     I --> B
 ```

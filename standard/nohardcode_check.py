@@ -18,7 +18,7 @@ import re
 import sys
 from typing import Any, Dict, List, Optional, Tuple
 
-VERSION = "0.1.0-dev"
+VERSION = "0.2.0-dev"
 
 ALLOWED_PROFILES = frozenset({"strict", "balanced", "permissive"})
 ALLOWED_SEVERITIES = frozenset({"error", "warning", "info"})
@@ -33,6 +33,13 @@ ALLOWED_RULE_CATEGORIES = frozenset({
     "pii_and_fixtures",
     "filesystem_paths",
     "code_duplication",
+    "adaptive_thresholds_and_timeouts",
+    "rigid_schema_and_dom_parsers",
+    "model_and_provider_bindings",
+    "procedural_workflows_and_sequences",
+    "hardware_and_environment_assumptions",
+    "phonetic_and_fuzzy_matching",
+    "static_prioritization_and_scoring",
 })
 
 # Built-in Detection Regexes
@@ -47,6 +54,18 @@ RE_HARDCODED_HOME = re.compile(
 )
 RE_HARDCODED_COORDINATES = re.compile(
     r'\b(click|moveTo|mouse_down|mouse_up|dragTo)\s*\(\s*(\d{2,4})\s*,\s*(\d{2,4})\s*\)'
+)
+RE_HARDCODED_SLEEP = re.compile(
+    r'\b(?:time\.sleep|asyncio\.sleep)\s*\(\s*([1-9][0-9]*(\.[0-9]+)?)\s*\)'
+)
+RE_HARDCODED_MODEL = re.compile(
+    r'(?i)\b(?:model|engine)\s*=\s*["\'](gpt-[34][a-z0-9._-]*|claude-[23][a-z0-9._-]*|text-davinci[a-z0-9._-]*|gemini-1\.[05][a-z0-9._-]*)["\']'
+)
+RE_HARDCODED_DISPLAY = re.compile(
+    r'(?i)(?:DISPLAY\s*[:=]\s*["\']:[0-9]+(\.[0-9]+)?["\']|--display\s+["\']:[0-9]+["\'])'
+)
+RE_HARDCODED_CUDA = re.compile(
+    r'["\']cuda:[0-9]+["\']'
 )
 
 
@@ -302,6 +321,66 @@ def scan_file_content(path: Path, content: str, profile: str = "balanced") -> li
                     replacement="Path.home(), XDG paths, or runtime lease (wellmanifest/account-runtime)",
                 )
             )
+
+        # NOHARDCODE-011: Hardcoded static sleep delays
+        is_test_or_fixture = any(marker in str(path).lower() for marker in ("test", "fixture", "mock", "bench"))
+        if not is_test_or_fixture and not line.strip().startswith("#"):
+            m_sleep = RE_HARDCODED_SLEEP.search(line)
+            if m_sleep:
+                dur = float(m_sleep.group(1))
+                if dur >= 2.0:
+                    violations.append(
+                        Violation(
+                            rule_id="NOHARDCODE-011",
+                            file_path=str(path),
+                            line_number=idx,
+                            severity="error" if profile == "strict" else "warning",
+                            message=f"Hardcoded sleep delay of {dur}s indicates brittle procedural timing",
+                            replacement="Adaptive latency backoff (EWMA/jitter) or event-driven completion wait",
+                        )
+                    )
+
+        # NOHARDCODE-013: Hardcoded model/provider bindings
+        if not is_test_or_fixture and not line.strip().startswith("#"):
+            m_model = RE_HARDCODED_MODEL.search(line)
+            if m_model:
+                violations.append(
+                    Violation(
+                        rule_id="NOHARDCODE-013",
+                        file_path=str(path),
+                        line_number=idx,
+                        severity="error" if profile in {"strict", "balanced"} else "warning",
+                        message=f"Hardcoded AI model binding: '{m_model.group(1)}'",
+                        replacement="Capability-based Model Router with fallback chain (wellmanifest/nl-dsl-llm)",
+                    )
+                )
+
+        # NOHARDCODE-015: Hardcoded display or hardware accelerators
+        if not is_test_or_fixture and not line.strip().startswith("#"):
+            m_disp = RE_HARDCODED_DISPLAY.search(line)
+            if m_disp:
+                violations.append(
+                    Violation(
+                        rule_id="NOHARDCODE-015",
+                        file_path=str(path),
+                        line_number=idx,
+                        severity="error" if profile in {"strict", "balanced"} else "warning",
+                        message=f"Hardcoded display identifier: '{m_disp.group(0)}'",
+                        replacement="Dynamic display socket probing and viewport auto-scaling",
+                    )
+                )
+            m_cuda = RE_HARDCODED_CUDA.search(line)
+            if m_cuda:
+                violations.append(
+                    Violation(
+                        rule_id="NOHARDCODE-015",
+                        file_path=str(path),
+                        line_number=idx,
+                        severity="error" if profile in {"strict", "balanced"} else "warning",
+                        message=f"Hardcoded CUDA device target: '{m_cuda.group(0)}'",
+                        replacement="Hardware capability discovery (torch.cuda.is_available() probe)",
+                    )
+                )
 
     # AST scanning for Python files
     if path.suffix == ".py":

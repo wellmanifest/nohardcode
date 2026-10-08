@@ -25,6 +25,13 @@ flowchart LR
    - Decision branching $\to$ Declarative JEV policy expressions (`wellmanifest/policy-dsl`).
    - Credentials $\to$ Authenticated envelopes (`wellmanifest/secrets`).
    - Hardcoded ports & endpoints $\to$ Environment constants (`wellmanifest/env-dsl`).
+   - Static sleep delays & timeouts $\to$ Adaptive EWMA latency & full jitter backoff (`wellmanifest/performance`).
+   - Deep rigid dict/DOM parsing $\to$ Schema-tolerant recursive tree visitor (`wellmanifest/nl-dsl-llm`).
+   - Hardcoded model names $\to$ Capability-based model router (`wellmanifest/llm`).
+   - Rigid procedural pipelines $\to$ Declarative DAG task planners (`wellmanifest/poa`).
+   - Display & accelerator assumptions $\to$ Dynamic socket & hardware capability probing (`wellmanifest/account-runtime`).
+   - Static typo/ASR tables $\to$ Fuzzy phonetic matching & embedding similarity.
+   - Fixed scoring weights $\to$ Multi-Armed Bandit feedback governors (`wellmanifest/saas-lifecycle`).
 4. **Stage 4 (Continuous CI Gate)**: Add `nohardcode_check.py` to pre-commit (`prefact`) and `./project/governance-check.sh`.
 
 ---
