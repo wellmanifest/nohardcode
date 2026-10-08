@@ -84,6 +84,10 @@
     "wellmanifest/env-dsl": ">=0.1.0",
     "wellmanifest/logs": ">=0.1.0",
     "wellmanifest/reuse": ">=0.1.0",
-    "wellmanifest/anonym": ">=0.1.0"
+    "wellmanifest/anonym": ">=0.1.0",
+    "wellmanifest/docs": ">=0.1.0",
+    "wellmanifest/dockuri": ">=0.1.0",
+    "wellmanifest/apx": ">=0.1.0",
+    "wellmanifest/project-ssot": ">=0.1.0"
   }
 }

@@ -37,10 +37,13 @@ Hardcoding is one of the primary drivers of brittle systems, automation failures
 | **PII Anonymization & Synthetic Data** | `wellmanifest/anonym` | Data masking, pseudonymization, GDPR compliance |
 | **Runtime Isolation & Path Portability** | `wellmanifest/account-runtime` | Bounded user workspace, sandboxed profiles, dynamic home directories |
 | **Declarative Process URIs** | `wellmanifest/poa` | `proc://...` execution contracts replacing raw shell scripts |
-| **Natural Language & Intent Models** | `wellmanifest/nl-dsl-llm` | Formal grammar and LLM intent translation contracts |
 | **Adaptive Performance & Latency Budgets** | `wellmanifest/performance` | RTT tracking, exponential jitter, dynamic timeouts and token governors |
 | **Autonomous Self-Healing Loops** | `wellmanifest/repair-lifecycle` | Reactive plan-act-observe-diagnose-repair execution loops |
 | **Multi-Agent Decision Governance** | `wellmanifest/agent` | Capability-based agent routing and bandit feedback prioritization |
+| **Container & Process Virtualization** | `wellmanifest/dockuri` | URI-based container routing (`dockuri://...`) replacing hardcoded host/socket bindings |
+| **Declarative App Packaging & Run** | `wellmanifest/apx` | Project packaging and execution replacing hardcoded tool invocation paths |
+| **Project Single Source of Truth** | `wellmanifest/project-ssot` | Machine-readable project metadata replacing hardcoded repo details |
+| **Canonical Documentation & Runbooks** | `wellmanifest/docs` | Standardized documentation architecture and codified markdown schemas |
 
 ---
 
