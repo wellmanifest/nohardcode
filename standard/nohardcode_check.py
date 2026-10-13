@@ -49,6 +49,11 @@ RE_PLAINTEXT_SECRET = re.compile(
 RE_HARDCODED_PORT = re.compile(
     r'(https?://|ws://|tcp://)?(localhost|127\.0\.0\.1|0\.0\.0\.0):([0-9]{2,5})'
 )
+# Private (RFC 1918) host address, with or without port. Network ranges
+# (`192.168.1.0/24`) and network/broadcast addresses are not endpoints.
+RE_PRIVATE_HOST = re.compile(
+    r"(?<![\d.])(?:10\.\d{1,3}|192\.168|172\.(?:1[6-9]|2\d|3[01]))\.\d{1,3}\.(?!0(?![\d.])|255(?![\d.]))\d{1,3}(?![\d.]|/\d)(?::\d{2,5})?"
+)
 # Default of an environment lookup: the remediation the adoption guide
 # prescribes (``os.getenv("WILLMUX_PORT", "7070")``), not a hardcoded endpoint.
 RE_ENV_DEFAULT = re.compile(
@@ -307,6 +312,31 @@ def apply_policy_rules(violations: list[Violation], rules: dict[str, Any]) -> li
     return kept
 
 
+# Line rules (005/006/009/011) are language-neutral; AST rules stay Python-only.
+SCANNED_SUFFIXES = frozenset({
+    ".py", ".ts", ".tsx", ".js", ".jsx", ".json", ".sh", ".yaml", ".yml",
+    ".c", ".h", ".cc", ".cpp", ".hpp", ".oql", ".toml", ".conf", ".ini",
+    ".service", ".container",
+})
+_SLASH_COMMENT_SUFFIXES = frozenset({".c", ".h", ".cc", ".cpp", ".hpp", ".ts", ".tsx", ".js", ".jsx"})
+
+
+def is_scanned_file(name: str) -> bool:
+    return (
+        Path(name).suffix.lower() in SCANNED_SUFFIXES
+        or name.startswith(".env")
+        or name.startswith("Dockerfile")
+    )
+
+
+def _is_comment(line: str, path: Path) -> bool:
+    stripped = line.strip()
+    if path.suffix.lower() in _SLASH_COMMENT_SUFFIXES:
+        # In C, `#define` and `#include` are code, not comments.
+        return stripped.startswith(("//", "/*", "*"))
+    return stripped.startswith("#")
+
+
 def scan_file_content(path: Path, content: str, profile: str = "balanced") -> list[Violation]:
     violations: list[Violation] = []
     lines = content.splitlines()
@@ -331,10 +361,10 @@ def scan_file_content(path: Path, content: str, profile: str = "balanced") -> li
                 )
 
         # NOHARDCODE-006: Hardcoded localhost ports
-        m_port = RE_HARDCODED_PORT.search(line)
+        m_port = RE_HARDCODED_PORT.search(line) or RE_PRIVATE_HOST.search(line)
         if m_port and _inside_env_default(line, m_port.start()):
             m_port = None
-        if m_port and not line.strip().startswith("#"):
+        if m_port and not _is_comment(line, path):
             violations.append(
                 Violation(
                     rule_id="NOHARDCODE-006",
@@ -348,7 +378,7 @@ def scan_file_content(path: Path, content: str, profile: str = "balanced") -> li
 
         # NOHARDCODE-009: Hardcoded user paths
         m_home = RE_HARDCODED_HOME.search(line)
-        if m_home and not line.strip().startswith("#"):
+        if m_home and not _is_comment(line, path):
             violations.append(
                 Violation(
                     rule_id="NOHARDCODE-009",
@@ -362,7 +392,7 @@ def scan_file_content(path: Path, content: str, profile: str = "balanced") -> li
 
         # NOHARDCODE-011: Hardcoded static sleep delays
         is_test_or_fixture = any(marker in str(path).lower() for marker in ("test", "fixture", "mock", "bench"))
-        if not is_test_or_fixture and not line.strip().startswith("#"):
+        if not is_test_or_fixture and not _is_comment(line, path):
             m_sleep = RE_HARDCODED_SLEEP.search(line)
             if m_sleep:
                 dur = float(m_sleep.group(1))
@@ -379,7 +409,7 @@ def scan_file_content(path: Path, content: str, profile: str = "balanced") -> li
                     )
 
         # NOHARDCODE-013: Hardcoded model/provider bindings
-        if not is_test_or_fixture and not line.strip().startswith("#"):
+        if not is_test_or_fixture and not _is_comment(line, path):
             m_model = RE_HARDCODED_MODEL.search(line)
             if m_model:
                 violations.append(
@@ -394,7 +424,7 @@ def scan_file_content(path: Path, content: str, profile: str = "balanced") -> li
                 )
 
         # NOHARDCODE-015: Hardcoded display or hardware accelerators
-        if not is_test_or_fixture and not line.strip().startswith("#"):
+        if not is_test_or_fixture and not _is_comment(line, path):
             m_disp = RE_HARDCODED_DISPLAY.search(line)
             if m_disp:
                 violations.append(
@@ -458,8 +488,13 @@ def audit_repository(
     target_dir: Path,
     profile: str = "balanced",
     exclusions: Optional[list[str]] = None,
+    coverage: Optional[dict[str, int]] = None,
 ) -> list[Violation]:
+    """Audit ``target_dir``; ``coverage`` (if given) receives file counts."""
     all_violations: list[Violation] = []
+    counts = coverage if coverage is not None else {}
+    for key in ("scanned", "excluded_by_policy", "unsupported"):
+        counts[key] = 0
     excl = exclusions or [
         ".git/**",
         "venv/**",
@@ -473,25 +508,33 @@ def audit_repository(
 
     for root, dirs, files in os.walk(target_dir):
         # Prune excluded directories in-place before traversing
-        dirs[:] = [
-            d for d in dirs
-            if not is_excluded(str((Path(root) / d).relative_to(target_dir)), excl)
-            and not (d.startswith(".") and d != ".")
-            and d not in {"node_modules", "venv", ".venv", "__pycache__", "dist", "build"}
-        ]
+        kept = []
+        for d in dirs:
+            if (d.startswith(".") and d != ".") or d in {"node_modules", "venv", ".venv", "__pycache__", "dist", "build"}:
+                continue
+            if is_excluded(str((Path(root) / d).relative_to(target_dir)), excl):
+                counts["excluded_by_policy"] += sum(
+                    1 for _r, _d, fs in os.walk(Path(root) / d) for f in fs if is_scanned_file(f)
+                )
+                continue
+            kept.append(d)
+        dirs[:] = kept
 
         for file_name in files:
             p = Path(root) / file_name
             rel = str(p.relative_to(target_dir))
-            if is_excluded(rel, excl):
+            if not is_scanned_file(file_name):
+                counts["unsupported"] += 1
                 continue
-            if p.suffix in {".py", ".ts", ".js", ".json", ".sh", ".yaml", ".yml"}:
-                try:
-                    content = p.read_text(encoding="utf-8", errors="replace")
-                    v = scan_file_content(p, content, profile=profile)
-                    all_violations.extend(v)
-                except Exception:
-                    pass
+            if is_excluded(rel, excl):
+                counts["excluded_by_policy"] += 1
+                continue
+            counts["scanned"] += 1
+            try:
+                content = p.read_text(encoding="utf-8", errors="replace")
+                all_violations.extend(scan_file_content(p, content, profile=profile))
+            except Exception:
+                pass
 
     return all_violations
 
@@ -536,8 +579,9 @@ def main() -> int:
         print(f"Error: Policy file not found: {policy_path}", file=sys.stderr)
         return 2
 
+    coverage: dict[str, int] = {}
     violations = apply_policy_rules(
-        audit_repository(target_path, profile=policy_profile, exclusions=exclusions),
+        audit_repository(target_path, profile=policy_profile, exclusions=exclusions, coverage=coverage),
         policy_rules,
     )
 
@@ -553,6 +597,7 @@ def main() -> int:
                 "errors": len(blocking_errors),
                 "warnings": len([v for v in violations if v.severity == "warning"]),
                 "waived": len([v for v in violations if v.waiver_reason is not None]),
+                "coverage": coverage,
             },
             "violations": [v.to_dict() for v in violations],
         }
@@ -566,6 +611,11 @@ def main() -> int:
                 print(f"  {v}")
             print("----------------------------------------------------------------------")
             print(f"Audit completed: {len(violations)} finding(s) ({len(blocking_errors)} blocking errors).")
+        print(
+            f"Coverage: {coverage['scanned']} file(s) scanned, "
+            f"{coverage['excluded_by_policy']} excluded by policy, "
+            f"{coverage['unsupported']} unsupported."
+        )
 
     return 1 if blocking_errors else 0
 

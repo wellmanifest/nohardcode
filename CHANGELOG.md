@@ -10,6 +10,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   kept in the report as `waived` with the reason, never blocking (#5).
 
 ### Fixed
+- Line rules also run on C/C++, `.oql`, `.toml`, `.tsx/.jsx`, `.conf`, `.ini`,
+  `.env*`, `Dockerfile*` and unit files; `#define` in C is no longer skipped as a
+  comment; NOHARDCODE-006 detects private (RFC 1918) host addresses; the report
+  has `summary.coverage` (#7).
 - `NOHARDCODE-006` no longer reports the default value of an environment
   lookup (`os.getenv`, `os.environ.get`, `os.environ.setdefault`) — the
   env-dsl remediation the adoption guide prescribes (#1).

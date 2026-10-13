@@ -159,6 +159,42 @@ def test_inline_waiver() -> None:
         raise ConformanceError("WAIVER_FAILURE", f"unexpected waivers: {found}")
 
 
+def test_non_python_line_rules_and_coverage() -> None:
+    """Line rules run on firmware/config files and coverage is reported."""
+    import tempfile
+
+    from nohardcode_check import audit_repository
+
+    c_code = '#define MASKFLEET_URL "http://192.168.188.212:8188"\n// see 127.0.0.1:9000 in docs\n'
+    hits = [v.line_number for v in scan_file_content(Path("cfg.h"), c_code) if v.rule_id == "NOHARDCODE-006"]
+    if hits != [1]:
+        raise ConformanceError("SCANNER_FAILURE", f"C #define must be scanned and // comments skipped: {hits}")
+    lan = (
+        'A = "192.168.188.224"\n'           # 1 private host
+        'B = "10.0.4.7:8080"\n'             # 2 private host with port
+        'NET = "192.168.188.0/24"\n'        # network range, not an endpoint
+        'BC = "192.168.1.255"\n'            # broadcast
+        'PUB = "8.8.8.8"\n'                 # public, out of scope
+        'V = "1.192.168.1.5"\n'             # not an address
+        'E = os.getenv("H", "192.168.1.9")\n'
+    )
+    lan_hits = [v.line_number for v in scan_file_content(Path("net.py"), lan) if v.rule_id == "NOHARDCODE-006"]
+    if lan_hits != [1, 2]:
+        raise ConformanceError("SCANNER_FAILURE", f"private host detection wrong: {lan_hits}")
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        (root / "main.c").write_text(c_code, encoding="utf-8")
+        (root / ".env").write_text("API=http://localhost:8080\n", encoding="utf-8")
+        (root / "tools").mkdir()
+        (root / "tools" / "flash.py").write_text('IP = "127.0.0.1:8080"\n', encoding="utf-8")
+        (root / "logo.png").write_bytes(b"\x89PNG")
+        coverage: dict = {}
+        found = audit_repository(root, exclusions=["tools/**"], coverage=coverage)
+        files = sorted({Path(v.file_path).name for v in found if v.rule_id == "NOHARDCODE-006"})
+        if files != [".env", "main.c"] or coverage != {"scanned": 2, "excluded_by_policy": 1, "unsupported": 1}:
+            raise ConformanceError("COVERAGE_FAILURE", f"files={files} coverage={coverage}")
+
+
 def run_conformance() -> int:
     print("=== Wellmanifest No-Hardcode Conformance Suite ===")
 
@@ -213,6 +249,13 @@ def run_conformance() -> int:
         print("✓ Smell detection AST scanner verified against normative rules.")
     except Exception as ex:
         print(f"✗ Smell detection scanner test failed: {ex}", file=sys.stderr)
+        return 1
+
+    try:
+        test_non_python_line_rules_and_coverage()
+        print("✓ Line rules cover firmware/config files and coverage is reported.")
+    except Exception as ex:
+        print(f"✗ Coverage test failed: {ex}", file=sys.stderr)
         return 1
 
     try:
