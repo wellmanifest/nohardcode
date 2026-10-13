@@ -3,6 +3,13 @@
 All notable changes to `wellmanifest/nohardcode` are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [Unreleased]
+
+### Fixed
+- `NOHARDCODE-006` no longer reports the default value of an environment
+  lookup (`os.getenv`, `os.environ.get`, `os.environ.setdefault`) — the
+  env-dsl remediation the adoption guide prescribes (#1).
+
 ## [0.2.0-dev] - 2026-10-08
 
 ### Added
