@@ -465,6 +465,15 @@ def main() -> int:
     exclusions = None
     target_path = Path(args.target).resolve()
     policy_path = Path(args.policy) if args.policy else (target_path / "nohardcode-policy.json")
+    if not args.policy and not policy_path.exists():
+        alt_paths = [
+            target_path / ".governance" / "nohardcode-policy.json",
+            target_path / ".governance" / "wellmanifest" / "nohardcode" / "nohardcode-policy.json",
+        ]
+        for alt in alt_paths:
+            if alt.exists():
+                policy_path = alt
+                break
 
     if policy_path.exists():
         try:
