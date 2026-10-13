@@ -56,7 +56,7 @@ Hardcoding is one of the primary drivers of brittle systems, automation failures
 | `NOHARDCODE-003` | Visual Text Localization | Hardcoded click offsets on canvas/VNC | Tesseract OCR bounding box resolution (`pytesseract`) |
 | `NOHARDCODE-004` | Business Decision Logic | Multi-branch (>3) hardcoded `if/elif` ladders | Declarative JEV policy expressions (`wellmanifest/policy-dsl`) |
 | `NOHARDCODE-005` | Secrets & Tokens | Plaintext API keys, passwords, bearer tokens | Authenticated symmetric envelopes (`wellmanifest/secrets`) |
-| `NOHARDCODE-006` | Network & Endpoints | Hardcoded localhost IPs and TCP/UDP ports | Typed environment variables (`wellmanifest/env-dsl`) |
+| `NOHARDCODE-006` | Network & Endpoints | Hardcoded loopback endpoints and private (RFC 1918) host IPs | Typed environment variables (`wellmanifest/env-dsl`) |
 | `NOHARDCODE-007` | Operational Logging | Raw `print()` or `console.log()` calls | Structured JSONL logging & codified runbooks (`wellmanifest/logs`) |
 | `NOHARDCODE-008` | Test Data & Fixtures | Real personal data (PII) in mocks | Deterministic masking and pseudonymization (`wellmanifest/anonym`) |
 | `NOHARDCODE-009` | Filesystem Paths | Hardcoded user paths (e.g. `/home/username`) | Standard APIs (`Path.home()`, `XDG_*`, `wellmanifest/account-runtime`) |
