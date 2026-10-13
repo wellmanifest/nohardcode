@@ -86,6 +86,20 @@ Status: `0.2.0-dev`.
 
 ---
 
+### 2.0 Scanned files and coverage
+
+Line rules (NOHARDCODE-005, 006, 009, 011) run on `.py .ts .tsx .js .jsx
+.json .sh .yaml .yml .c .h .cc .cpp .hpp .oql .toml .conf .ini .service
+.container`, `.env*` and `Dockerfile*`; AST rules stay Python-only. In C-like
+files only `//`, `/*` and `*` lines are comments, so `#define` is checked.
+NOHARDCODE-006 covers loopback endpoints with a port and private (RFC 1918)
+host addresses with or without a port; network ranges such as
+`192.168.1.0/24` and `.0`/`.255` addresses are not endpoints.
+
+The JSON report includes `summary.coverage` (`scanned`, `excluded_by_policy`,
+`unsupported`), so a clean result is always read together with what it
+covered.
+
 ### 2.1 Reviewed inline waivers
 
 A reviewed exception is written on the flagged line:
