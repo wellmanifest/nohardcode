@@ -9,6 +9,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - `NOHARDCODE-006` no longer reports the default value of an environment
   lookup (`os.getenv`, `os.environ.get`, `os.environ.setdefault`) — the
   env-dsl remediation the adoption guide prescribes (#1).
+- The checker applies a repository policy's per-rule `enabled` and
+  `severity`; before, only `profile` and `exclusions` were used (#3).
 
 ## [0.2.0-dev] - 2026-10-08
 

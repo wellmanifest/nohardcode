@@ -285,6 +285,20 @@ def _inside_env_default(line: str, position: int) -> bool:
     )
 
 
+def apply_policy_rules(violations: list[Violation], rules: dict[str, Any]) -> list[Violation]:
+    """Apply a repository policy's per-rule ``enabled`` and ``severity``."""
+    kept: list[Violation] = []
+    for violation in violations:
+        config = rules.get(violation.rule_id)
+        if isinstance(config, dict):
+            if config.get("enabled") is False:
+                continue
+            if config.get("severity") in ALLOWED_SEVERITIES:
+                violation.severity = config["severity"]
+        kept.append(violation)
+    return kept
+
+
 def scan_file_content(path: Path, content: str, profile: str = "balanced") -> list[Violation]:
     violations: list[Violation] = []
     lines = content.splitlines()
@@ -491,12 +505,14 @@ def main() -> int:
                 policy_path = alt
                 break
 
+    policy_rules: dict[str, Any] = {}
     if policy_path.exists():
         try:
             p_data = json.loads(policy_path.read_text(encoding="utf-8"))
             validate_policy_document(p_data)
             policy_profile = p_data.get("profile", policy_profile)
             exclusions = p_data.get("exclusions")
+            policy_rules = p_data.get("rules") or {}
         except ConformanceError as ce:
             print(f"Policy validation failed: {ce}", file=sys.stderr)
             return 1
@@ -507,7 +523,10 @@ def main() -> int:
         print(f"Error: Policy file not found: {policy_path}", file=sys.stderr)
         return 2
 
-    violations = audit_repository(target_path, profile=policy_profile, exclusions=exclusions)
+    violations = apply_policy_rules(
+        audit_repository(target_path, profile=policy_profile, exclusions=exclusions),
+        policy_rules,
+    )
 
     blocking_errors = [v for v in violations if v.severity == "error"]
 

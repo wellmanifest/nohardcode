@@ -121,6 +121,31 @@ MIXED = os.getenv("PORT", "8080") or "localhost:9090"
         )
 
 
+def test_policy_rules_are_applied() -> None:
+    """Per-rule enabled/severity in a repository policy must change the result."""
+    import subprocess
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        (root / "app.py").write_text('print("x")\nURL = "http://localhost:8080"\n', encoding="utf-8")
+        policy = load_json(PACK / "nohardcode-policy.json")
+        policy["rules"]["NOHARDCODE-006"] = {"enabled": False, "severity": "error"}
+        policy["rules"]["NOHARDCODE-007"] = {"enabled": True, "severity": "warning"}
+        (root / "nohardcode-policy.json").write_text(json.dumps(policy), encoding="utf-8")
+        result = subprocess.run(
+            [sys.executable, str(PACK / "standard" / "nohardcode_check.py"),
+             "--target", str(root), "--format", "json"],
+            capture_output=True, text=True, check=False,
+        )
+        found = {(v["rule_id"], v["severity"]) for v in json.loads(result.stdout)["violations"]}
+        if found != {("NOHARDCODE-007", "warning")} or result.returncode != 0:
+            raise ConformanceError(
+                "POLICY_RULES_IGNORED",
+                f"repository policy rules not applied: {sorted(found)} rc={result.returncode}",
+            )
+
+
 def run_conformance() -> int:
     print("=== Wellmanifest No-Hardcode Conformance Suite ===")
 
@@ -175,6 +200,13 @@ def run_conformance() -> int:
         print("✓ Smell detection AST scanner verified against normative rules.")
     except Exception as ex:
         print(f"✗ Smell detection scanner test failed: {ex}", file=sys.stderr)
+        return 1
+
+    try:
+        test_policy_rules_are_applied()
+        print("✓ Repository policy rules (enabled/severity) applied.")
+    except Exception as ex:
+        print(f"✗ Policy rules test failed: {ex}", file=sys.stderr)
         return 1
 
     print("\nAll conformance tests PASSED. Status: COMPLIANT.")
