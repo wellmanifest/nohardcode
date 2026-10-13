@@ -5,6 +5,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added
+- Reviewed inline waivers `# nohardcode: allow NOHARDCODE-NNN -- reason`:
+  kept in the report as `waived` with the reason, never blocking (#5).
+
 ### Fixed
 - `NOHARDCODE-006` no longer reports the default value of an environment
   lookup (`os.getenv`, `os.environ.get`, `os.environ.setdefault`) — the

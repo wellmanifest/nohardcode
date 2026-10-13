@@ -55,6 +55,9 @@ RE_ENV_DEFAULT = re.compile(
     r'(?:\bgetenv|\benviron\.get|\benviron\.setdefault)\(\s*["\'][A-Za-z_][A-Za-z0-9_]*["\']\s*,\s*'
     r'(?P<default>["\'][^"\']*["\'])'
 )
+# Reviewed exception on the flagged line; the rule id must match and a
+# reason is mandatory. Waived findings stay in the report but do not block.
+RE_WAIVER = re.compile(r"#\s*nohardcode:\s*allow\s+(NOHARDCODE-\d{3})\s+--\s+(\S.*?)\s*$")
 RE_HARDCODED_HOME = re.compile(
     r'["\'](/home/[a-zA-Z0-9._-]+|[A-Z]:\\[Uu]sers\\[a-zA-Z0-9._-]+)'
 )
@@ -99,16 +102,21 @@ class Violation:
         self.severity = severity
         self.message = message
         self.replacement = replacement
+        self.waiver_reason: Optional[str] = None
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        data = {
             "rule_id": self.rule_id,
             "file_path": self.file_path,
             "line_number": self.line_number,
             "severity": self.severity,
             "message": self.message,
             "recommended_replacement": self.replacement,
+            "waived": self.waiver_reason is not None,
         }
+        if self.waiver_reason is not None:
+            data["waiver_reason"] = self.waiver_reason
+        return data
 
     def __str__(self) -> str:
         return f"[{self.severity.upper()}] {self.rule_id} in {self.file_path}:{self.line_number} -> {self.message} (Fix: {self.replacement})"
@@ -422,6 +430,11 @@ def scan_file_content(path: Path, content: str, profile: str = "balanced") -> li
         except SyntaxError:
             pass
 
+    for violation in violations:
+        if 1 <= violation.line_number <= len(lines):
+            waiver = RE_WAIVER.search(lines[violation.line_number - 1])
+            if waiver and waiver.group(1) == violation.rule_id:
+                violation.waiver_reason = waiver.group(2)
     return violations
 
 
@@ -528,7 +541,7 @@ def main() -> int:
         policy_rules,
     )
 
-    blocking_errors = [v for v in violations if v.severity == "error"]
+    blocking_errors = [v for v in violations if v.severity == "error" and v.waiver_reason is None]
 
     if args.format == "json":
         out = {
@@ -539,6 +552,7 @@ def main() -> int:
                 "total_violations": len(violations),
                 "errors": len(blocking_errors),
                 "warnings": len([v for v in violations if v.severity == "warning"]),
+                "waived": len([v for v in violations if v.waiver_reason is not None]),
             },
             "violations": [v.to_dict() for v in violations],
         }
