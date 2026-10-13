@@ -49,6 +49,12 @@ RE_PLAINTEXT_SECRET = re.compile(
 RE_HARDCODED_PORT = re.compile(
     r'(https?://|ws://|tcp://)?(localhost|127\.0\.0\.1|0\.0\.0\.0):([0-9]{2,5})'
 )
+# Default of an environment lookup: the remediation the adoption guide
+# prescribes (``os.getenv("WILLMUX_PORT", "7070")``), not a hardcoded endpoint.
+RE_ENV_DEFAULT = re.compile(
+    r'(?:\bgetenv|\benviron\.get|\benviron\.setdefault)\(\s*["\'][A-Za-z_][A-Za-z0-9_]*["\']\s*,\s*'
+    r'(?P<default>["\'][^"\']*["\'])'
+)
 RE_HARDCODED_HOME = re.compile(
     r'["\'](/home/[a-zA-Z0-9._-]+|[A-Z]:\\[Uu]sers\\[a-zA-Z0-9._-]+)'
 )
@@ -271,6 +277,14 @@ class CodeSmellVisitor(ast.NodeVisitor):
         self.generic_visit(node)
 
 
+def _inside_env_default(line: str, position: int) -> bool:
+    """True when ``position`` lies in the default argument of an env lookup."""
+    return any(
+        match.start("default") <= position < match.end("default")
+        for match in RE_ENV_DEFAULT.finditer(line)
+    )
+
+
 def scan_file_content(path: Path, content: str, profile: str = "balanced") -> list[Violation]:
     violations: list[Violation] = []
     lines = content.splitlines()
@@ -296,6 +310,8 @@ def scan_file_content(path: Path, content: str, profile: str = "balanced") -> li
 
         # NOHARDCODE-006: Hardcoded localhost ports
         m_port = RE_HARDCODED_PORT.search(line)
+        if m_port and _inside_env_default(line, m_port.start()):
+            m_port = None
         if m_port and not line.strip().startswith("#"):
             violations.append(
                 Violation(

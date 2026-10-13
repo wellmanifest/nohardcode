@@ -101,6 +101,25 @@ def bad_worker():
     if missing:
         raise ConformanceError("SCANNER_FAILURE", f"AST scanner missed expected rules: {missing}")
 
+    # The env-dsl remediation must not be reported as the smell it replaces.
+    env_code = """
+import os
+HOST = os.getenv("WILLMUX_HOST", "127.0.0.1:7070")
+OLLAMA = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
+os.environ.setdefault("API_URL", "localhost:8080")
+BAD = "http://localhost:8080/api"
+MIXED = os.getenv("PORT", "8080") or "localhost:9090"
+"""
+    flagged = sorted(
+        v.line_number for v in scan_file_content(Path("svc.py"), env_code)
+        if v.rule_id == "NOHARDCODE-006"
+    )
+    if flagged != [6, 7]:
+        raise ConformanceError(
+            "SCANNER_FAILURE",
+            f"NOHARDCODE-006 must skip env-lookup defaults only; flagged lines {flagged}",
+        )
+
 
 def run_conformance() -> int:
     print("=== Wellmanifest No-Hardcode Conformance Suite ===")
