@@ -86,6 +86,21 @@ Status: `0.2.0-dev`.
 
 ---
 
+### 2.1 Reviewed inline waivers
+
+A reviewed exception is written on the flagged line:
+
+```python
+DEFAULT_HOST = "127.0.0.1:11434"  # nohardcode: allow NOHARDCODE-006 -- fallback for OLLAMA_HOST
+```
+
+The rule id MUST match the finding and the reason after `--` is mandatory.
+A waived finding stays in the report (`waived: true`, `waiver_reason`) and is
+counted in `summary.waived`, but it never counts as a blocking error. A
+pragma without a reason, or naming another rule, has no effect. Waivers are
+for reviewed, local exceptions; disabling a rule repository-wide belongs in
+the policy `rules` map.
+
 ## 3. Conformance Profiles
 
 - **Strict**: All rules (`NOHARDCODE-001` through `NOHARDCODE-017`) are evaluated as blocking errors (`exit code 1`).

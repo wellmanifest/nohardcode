@@ -146,6 +146,19 @@ def test_policy_rules_are_applied() -> None:
             )
 
 
+def test_inline_waiver() -> None:
+    """A reasoned waiver for the matching rule keeps the finding but unblocks it."""
+    code = (
+        'A = "localhost:8080"  # nohardcode: allow NOHARDCODE-006 -- default for API_URL env lookup\n'
+        'B = "localhost:8081"  # nohardcode: allow NOHARDCODE-006\n'
+        'C = "localhost:8082"  # nohardcode: allow NOHARDCODE-009 -- wrong rule\n'
+    )
+    found = {v.line_number: v.waiver_reason for v in scan_file_content(Path("cfg.py"), code)
+             if v.rule_id == "NOHARDCODE-006"}
+    if found != {1: "default for API_URL env lookup", 2: None, 3: None}:
+        raise ConformanceError("WAIVER_FAILURE", f"unexpected waivers: {found}")
+
+
 def run_conformance() -> int:
     print("=== Wellmanifest No-Hardcode Conformance Suite ===")
 
@@ -200,6 +213,13 @@ def run_conformance() -> int:
         print("✓ Smell detection AST scanner verified against normative rules.")
     except Exception as ex:
         print(f"✗ Smell detection scanner test failed: {ex}", file=sys.stderr)
+        return 1
+
+    try:
+        test_inline_waiver()
+        print("✓ Inline waivers require a matching rule and a reason.")
+    except Exception as ex:
+        print(f"✗ Inline waiver test failed: {ex}", file=sys.stderr)
         return 1
 
     try:
