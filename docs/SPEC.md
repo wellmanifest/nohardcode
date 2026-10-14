@@ -96,6 +96,13 @@ files only `//`, `/*` and `*` lines are comments, so `#define` is checked.
 NOHARDCODE-006 covers loopback endpoints with a port and private (RFC 1918)
 host addresses with or without a port; network ranges such as
 `192.168.1.0/24` and `.0`/`.255` addresses are not endpoints.
+The default of an environment lookup is the env-dsl remedy, not a finding:
+`os.getenv("X", "...")` / `os.environ.get(...)` in Python, the `||`/`??`
+fallback directly after an UPPER_SNAKE configuration key in JS/TS
+(`process.env.BASE_URL || "..."`, `config().API_URL ?? "..."`), and
+`${NAME:-...}` in shell. NOHARDCODE-011 exempts tests, fixtures, mocks and
+benchmarks by repository-relative path component or filename word, never by
+substring.
 
 The JSON report includes `summary.coverage` (`scanned`, `excluded_by_policy`,
 `unsupported`), so a clean result is always read together with what it

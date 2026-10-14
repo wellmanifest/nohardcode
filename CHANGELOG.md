@@ -22,6 +22,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   and filename word instead of any substring of the full path (`latest.py`,
   `checkout.py`, `client.py` and host directories no longer suppress it); an
   explicit `"exclusions": []` scans everything instead of the defaults (#11).
+- NOHARDCODE-006 skips env-lookup defaults in JS/TS (`process.env.X || "..."`,
+  `import.meta.env.X ?? "..."`, `config().X || "..."`) and shell
+  (`${X:-...}`) like it already did for Python; NOHARDCODE-011 exempts tests and
+  fixtures by path component and filename word instead of substring (#13).
 - `NOHARDCODE-006` no longer reports the default value of an environment
   lookup (`os.getenv`, `os.environ.get`, `os.environ.setdefault`) — the
   env-dsl remediation the adoption guide prescribes (#1).
