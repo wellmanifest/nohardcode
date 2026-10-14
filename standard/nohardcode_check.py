@@ -66,7 +66,7 @@ RE_ENV_DEFAULT = re.compile(
 RE_ENV_DEFAULT_JS = re.compile(
     r'\.[A-Z][A-Z0-9_]*\s*(?:\|\||\?\?)\s*(?P<default>"[^"]*"|\'[^\']*\'|`[^`]*`)'
 )
-RE_ENV_ASSIGNMENT = re.compile(r"\s*(?:export\s+)?[A-Za-z_][A-Za-z0-9_]*=")
+RE_ENV_ASSIGNMENT = re.compile(r"\s*(?:export\s+)?[A-Za-z_][A-Za-z0-9_]*\s*=")
 RE_ENV_DEFAULT_SHELL = re.compile(r'\$\{[A-Za-z_][A-Za-z0-9_]*:?-(?P<default>[^}]*)\}')
 ENV_DEFAULT_PATTERNS = (RE_ENV_DEFAULT, RE_ENV_DEFAULT_JS, RE_ENV_DEFAULT_SHELL)
 # Reviewed exception on the flagged line; the rule id must match and a
