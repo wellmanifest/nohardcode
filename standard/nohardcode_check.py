@@ -201,12 +201,31 @@ def validate_detection_rule_document(doc: dict[str, Any]) -> None:
         raise ConformanceError("DETECTION_RULE_INVALID", "matcher must be an object with 'kind'")
 
 
+# Where print() is the interface: CLI tools, scripts, tests and benchmarks.
+CLI_DIRECTORIES = {"bin", "scripts", "cli", "test", "tests", "benchmark", "benchmarks"}
+CLI_NAME_WORDS = {"check", "cli", "conformance", "test", "tests", "conftest", "benchmark"}
+
+
+def is_cli_or_test_path(role_path: str) -> bool:
+    """Match whole path components and filename words, never substrings."""
+    parts = [part for part in re.split(r"[\\/]", role_path.lower()) if part not in {"", "."}]
+    if not parts:
+        return False
+    *directories, name = parts
+    stem = name.rsplit(".", 1)[0]
+    words = set(re.split(r"[_.-]", stem))
+    return bool(CLI_DIRECTORIES.intersection(directories)) or stem == "__main__" or bool(CLI_NAME_WORDS & words)
+
+
 class CodeSmellVisitor(ast.NodeVisitor):
     """AST Visitor detecting hardcoded anti-patterns in Python source files."""
 
-    def __init__(self, filename: str, profile: str = "balanced") -> None:
+    def __init__(self, filename: str, profile: str = "balanced", role_path: Optional[str] = None) -> None:
         self.filename = filename
         self.profile = profile
+        # Repository-relative path used to classify the file's role; host
+        # directories above the scanned root must not influence it.
+        self.role_path = filename if role_path is None else role_path
         self.violations: list[Violation] = []
 
     def visit_List(self, node: ast.List) -> None:
@@ -275,8 +294,7 @@ class CodeSmellVisitor(ast.NodeVisitor):
     def visit_Call(self, node: ast.Call) -> None:
         # Check for raw print() calls (NOHARDCODE-007)
         # Exclude CLI tools, scripts, and test runners where print is standard CLI output
-        is_cli_or_test = any(marker in self.filename.lower() for marker in ("check", "conformance", "cli", "test", "benchmark", "scripts/"))
-        if not is_cli_or_test and isinstance(node.func, ast.Name) and node.func.id == "print":
+        if not is_cli_or_test_path(self.role_path) and isinstance(node.func, ast.Name) and node.func.id == "print":
             severity = "error" if self.profile in {"strict", "balanced"} else "warning"
             self.violations.append(
                 Violation(
@@ -370,7 +388,9 @@ def _is_comment(line: str, path: Path) -> bool:
     return stripped.startswith("#")
 
 
-def scan_file_content(path: Path, content: str, profile: str = "balanced") -> list[Violation]:
+def scan_file_content(
+    path: Path, content: str, profile: str = "balanced", role_path: Optional[str] = None
+) -> list[Violation]:
     violations: list[Violation] = []
     lines = content.splitlines()
 
@@ -487,7 +507,7 @@ def scan_file_content(path: Path, content: str, profile: str = "balanced") -> li
     if path.suffix == ".py":
         try:
             tree = ast.parse(content, filename=str(path))
-            visitor = CodeSmellVisitor(str(path), profile=profile)
+            visitor = CodeSmellVisitor(str(path), profile=profile, role_path=role_path)
             visitor.visit(tree)
             violations.extend(visitor.violations)
         except SyntaxError:
@@ -534,7 +554,9 @@ def audit_repository(
     counts = coverage if coverage is not None else {}
     for key in ("scanned", "excluded_by_policy", "unsupported"):
         counts[key] = 0
-    excl = exclusions or [
+    # An explicit empty list requests a full scan; only an absent policy
+    # value falls back to the defaults.
+    excl = exclusions if exclusions is not None else [
         ".git/**",
         "venv/**",
         ".venv/**",
@@ -571,7 +593,7 @@ def audit_repository(
             counts["scanned"] += 1
             try:
                 content = p.read_text(encoding="utf-8", errors="replace")
-                all_violations.extend(scan_file_content(p, content, profile=profile))
+                all_violations.extend(scan_file_content(p, content, profile=profile, role_path=rel))
             except Exception:
                 pass
 

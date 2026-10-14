@@ -39,6 +39,7 @@ Status: `0.2.0-dev`.
 ### `NOHARDCODE-007`: Structured Logging & Codified Errors
 1. Applications MUST NOT emit unstructured raw string prints (`print()`, `console.log()`) for operational events or fatal conditions.
 2. All errors and exceptions MUST adopt structured error codes documented in `errors/{CODE}.md` runbooks according to `wellmanifest/logs`.
+3. The reference checker exempts tooling whose interface is console output: a repository-relative directory component `bin`, `scripts`, `cli`, `test(s)` or `benchmark(s)`; a filename word (split on `_`, `-`, `.`) `check`, `cli`, `conformance`, `test(s)`, `conftest` or `benchmark`; or `__main__.py`. Substrings never match (`latest.py`, `checkout.py` and `client.py` are production code).
 
 ### `NOHARDCODE-008`: PII & Test Fixture Hygiene
 1. Test fixtures, sample datasets, and mock objects MUST NOT contain real personal data (PII) of real individuals or production systems.

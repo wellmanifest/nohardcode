@@ -213,6 +213,40 @@ def test_policy_waivers() -> None:
         raise ConformanceError("POLICY_WAIVER_FAILURE", f"invalid waiver accepted: {bad}")
 
 
+def test_print_exemption_and_explicit_exclusions() -> None:
+    """NOHARDCODE-007 exempts CLI/test files by path component, not substring."""
+    import tempfile
+
+    from nohardcode_check import audit_repository
+
+    code = 'print("status")\n'
+
+    def flagged(name: str) -> bool:
+        return any(v.rule_id == "NOHARDCODE-007" for v in scan_file_content(Path(name), code))
+
+    production = ["latest.py", "checkout.py", "client.py", "pkg/contest/app.py", "attestation.py"]
+    tooling = ["tests/test_app.py", "scripts/run.py", "nohardcode_check.py", "pkg/cli.py",
+               "app_test.py", "conftest.py", "pkg/__main__.py", "bin/tool.py", "check-docs.py"]
+    wrong = [n for n in production if not flagged(n)] + [n for n in tooling if flagged(n)]
+    if wrong:
+        raise ConformanceError("SCANNER_FAILURE", f"print() exemption misclassified: {wrong}")
+    with tempfile.TemporaryDirectory() as tmp:
+        # Directories above the scanned root never classify a file as tooling.
+        root = Path(tmp) / "tests" / "repo"
+        (root / "docs").mkdir(parents=True)
+        (root / "app.py").write_text(code, encoding="utf-8")
+        (root / "docs" / "example.py").write_text(code, encoding="utf-8")
+
+        def files(exclusions: object) -> list[str]:
+            found = audit_repository(root, exclusions=exclusions)  # type: ignore[arg-type]
+            return sorted(str(Path(v.file_path).relative_to(root)) for v in found if v.rule_id == "NOHARDCODE-007")
+
+        if files(None) != ["app.py"]:
+            raise ConformanceError("SCANNER_FAILURE", f"default scan wrong: {files(None)}")
+        if files([]) != ["app.py", "docs/example.py"]:
+            raise ConformanceError("SCANNER_FAILURE", f"explicit empty exclusions must scan everything: {files([])}")
+
+
 def test_non_python_line_rules_and_coverage() -> None:
     """Line rules run on firmware/config files and coverage is reported."""
     import tempfile
@@ -308,6 +342,8 @@ def run_conformance() -> int:
     try:
         test_non_python_line_rules_and_coverage()
         print("✓ Line rules cover firmware/config files and coverage is reported.")
+        test_print_exemption_and_explicit_exclusions()
+        print("✓ print() exemption matches path components; empty exclusions scan everything.")
     except Exception as ex:
         print(f"✗ Coverage test failed: {ex}", file=sys.stderr)
         return 1
