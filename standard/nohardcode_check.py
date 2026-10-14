@@ -66,6 +66,7 @@ RE_ENV_DEFAULT = re.compile(
 RE_ENV_DEFAULT_JS = re.compile(
     r'\.[A-Z][A-Z0-9_]*\s*(?:\|\||\?\?)\s*(?P<default>"[^"]*"|\'[^\']*\'|`[^`]*`)'
 )
+RE_ENV_ASSIGNMENT = re.compile(r"\s*(?:export\s+)?[A-Za-z_][A-Za-z0-9_]*=")
 RE_ENV_DEFAULT_SHELL = re.compile(r'\$\{[A-Za-z_][A-Za-z0-9_]*:?-(?P<default>[^}]*)\}')
 ENV_DEFAULT_PATTERNS = (RE_ENV_DEFAULT, RE_ENV_DEFAULT_JS, RE_ENV_DEFAULT_SHELL)
 # Reviewed exception on the flagged line; the rule id must match and a
@@ -437,6 +438,10 @@ def scan_file_content(
 
         # NOHARDCODE-006: Hardcoded localhost ports
         m_port = RE_HARDCODED_PORT.search(line) or RE_PRIVATE_HOST.search(line)
+        # A .env file is the env-dsl configuration itself: a loopback default
+        # there is configuration. Private LAN hosts still pin rig topology.
+        if path.name.startswith(".env") and RE_ENV_ASSIGNMENT.match(line):
+            m_port = RE_PRIVATE_HOST.search(line)
         if m_port and _inside_env_default(line, m_port.start()):
             m_port = None
         if m_port and not _is_comment(line, path):

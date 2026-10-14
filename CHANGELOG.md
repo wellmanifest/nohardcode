@@ -26,6 +26,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   `import.meta.env.X ?? "..."`, `config().X || "..."`) and shell
   (`${X:-...}`) like it already did for Python; NOHARDCODE-011 exempts tests and
   fixtures by path component and filename word instead of substring (#13).
+- Loopback endpoints on `KEY=value` lines of `.env*` files are configuration and
+  no longer reported; private (RFC 1918) hosts there still are (#15).
 - `NOHARDCODE-006` no longer reports the default value of an environment
   lookup (`os.getenv`, `os.environ.get`, `os.environ.setdefault`) — the
   env-dsl remediation the adoption guide prescribes (#1).

@@ -276,6 +276,22 @@ def test_env_defaults_in_js_and_shell() -> None:
         raise ConformanceError("SCANNER_FAILURE", f"sleep test exemption misclassified: {wrong}")
 
 
+def test_env_file_loopback_values() -> None:
+    """Loopback defaults in .env files are configuration; LAN hosts are not."""
+    env = (
+        "API_URL=http://localhost:8100\n"          # 1 loopback default
+        "export WS=ws://127.0.0.1:8101\n"          # 2 loopback default
+        "STACKNET=192.168.188.229:8080\n"          # 3 rig LAN pin
+        "echo http://localhost:8100\n"             # 4 not an assignment
+    )
+    hits = [v.line_number for v in scan_file_content(Path(".env.fleet"), env) if v.rule_id == "NOHARDCODE-006"]
+    if hits != [3, 4]:
+        raise ConformanceError("SCANNER_FAILURE", f".env loopback/LAN handling wrong: {hits}")
+    other = [v.line_number for v in scan_file_content(Path("settings.ini"), env) if v.rule_id == "NOHARDCODE-006"]
+    if other != [1, 2, 3, 4]:
+        raise ConformanceError("SCANNER_FAILURE", f"only .env files may carry loopback defaults: {other}")
+
+
 def test_non_python_line_rules_and_coverage() -> None:
     """Line rules run on firmware/config files and coverage is reported."""
     import tempfile
@@ -301,7 +317,7 @@ def test_non_python_line_rules_and_coverage() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
         (root / "main.c").write_text(c_code, encoding="utf-8")
-        (root / ".env").write_text("API=http://localhost:8080\n", encoding="utf-8")
+        (root / ".env").write_text("API=http://192.168.1.50:8080\n", encoding="utf-8")
         (root / "tools").mkdir()
         (root / "tools" / "flash.py").write_text('IP = "127.0.0.1:8080"\n', encoding="utf-8")
         (root / "logo.png").write_bytes(b"\x89PNG")
@@ -374,6 +390,7 @@ def run_conformance() -> int:
         test_print_exemption_and_explicit_exclusions()
         print("✓ print() exemption matches path components; empty exclusions scan everything.")
         test_env_defaults_in_js_and_shell()
+        test_env_file_loopback_values()
         print("✓ JS/TS and shell env-lookup defaults skipped; sleep test exemption matches path components.")
     except Exception as ex:
         print(f"✗ Coverage test failed: {ex}", file=sys.stderr)

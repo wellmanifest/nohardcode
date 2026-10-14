@@ -100,7 +100,10 @@ The default of an environment lookup is the env-dsl remedy, not a finding:
 `os.getenv("X", "...")` / `os.environ.get(...)` in Python, the `||`/`??`
 fallback directly after an UPPER_SNAKE configuration key in JS/TS
 (`process.env.BASE_URL || "..."`, `config().API_URL ?? "..."`), and
-`${NAME:-...}` in shell. NOHARDCODE-011 exempts tests, fixtures, mocks and
+`${NAME:-...}` in shell. In `.env*` files a `KEY=value` line is that
+configuration, so a loopback endpoint there is not a finding; a private (RFC 1918)
+host address still is, because a tracked env file must not pin rig or LAN
+topology. NOHARDCODE-011 exempts tests, fixtures, mocks and
 benchmarks by repository-relative path component or filename word, never by
 substring.
 
