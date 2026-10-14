@@ -60,6 +60,14 @@ RE_ENV_DEFAULT = re.compile(
     r'(?:\bgetenv|\benviron\.get|\benviron\.setdefault)\(\s*["\'][A-Za-z_][A-Za-z0-9_]*["\']\s*,\s*'
     r'(?P<default>["\'][^"\']*["\'])'
 )
+# The same remedy in JS/TS: fallback of an UPPER_SNAKE configuration key
+# (``process.env.BASE_URL || "..."``, ``import.meta.env.X ?? "..."``,
+# ``config().API_URL || "..."``) and in shell (``${API_URL:-...}``).
+RE_ENV_DEFAULT_JS = re.compile(
+    r'\.[A-Z][A-Z0-9_]*\s*(?:\|\||\?\?)\s*(?P<default>"[^"]*"|\'[^\']*\'|`[^`]*`)'
+)
+RE_ENV_DEFAULT_SHELL = re.compile(r'\$\{[A-Za-z_][A-Za-z0-9_]*:?-(?P<default>[^}]*)\}')
+ENV_DEFAULT_PATTERNS = (RE_ENV_DEFAULT, RE_ENV_DEFAULT_JS, RE_ENV_DEFAULT_SHELL)
 # Reviewed exception on the flagged line; the rule id must match and a
 # reason is mandatory. Waived findings stay in the report but do not block.
 RE_WAIVER = re.compile(r"#\s*nohardcode:\s*allow\s+(NOHARDCODE-\d{3})\s+--\s+(\S.*?)\s*$")
@@ -206,6 +214,19 @@ CLI_DIRECTORIES = {"bin", "scripts", "cli", "test", "tests", "benchmark", "bench
 CLI_NAME_WORDS = {"check", "cli", "conformance", "test", "tests", "conftest", "benchmark"}
 
 
+TEST_DIRECTORIES = {"test", "tests", "e2e", "fixture", "fixtures", "mock", "mocks", "__mocks__", "bench", "benchmark", "benchmarks"}
+TEST_NAME_WORDS = {"test", "tests", "spec", "fixture", "fixtures", "mock", "mocks", "bench", "benchmark", "conftest"}
+
+
+def is_test_or_fixture_path(role_path: str) -> bool:
+    """Test, fixture, mock or benchmark by path component or filename word."""
+    parts = [part for part in re.split(r"[\\/]", role_path.lower()) if part not in {"", "."}]
+    if not parts:
+        return False
+    *directories, name = parts
+    return bool(TEST_DIRECTORIES.intersection(directories)) or bool(TEST_NAME_WORDS & set(re.split(r"[_.-]", name)))
+
+
 def is_cli_or_test_path(role_path: str) -> bool:
     """Match whole path components and filename words, never substrings."""
     parts = [part for part in re.split(r"[\\/]", role_path.lower()) if part not in {"", "."}]
@@ -329,7 +350,8 @@ def _inside_env_default(line: str, position: int) -> bool:
     """True when ``position`` lies in the default argument of an env lookup."""
     return any(
         match.start("default") <= position < match.end("default")
-        for match in RE_ENV_DEFAULT.finditer(line)
+        for pattern in ENV_DEFAULT_PATTERNS
+        for match in pattern.finditer(line)
     )
 
 
@@ -444,7 +466,7 @@ def scan_file_content(
             )
 
         # NOHARDCODE-011: Hardcoded static sleep delays
-        is_test_or_fixture = any(marker in str(path).lower() for marker in ("test", "fixture", "mock", "bench"))
+        is_test_or_fixture = is_test_or_fixture_path(str(path) if role_path is None else role_path)
         if not is_test_or_fixture and not _is_comment(line, path):
             m_sleep = RE_HARDCODED_SLEEP.search(line)
             if m_sleep:

@@ -247,6 +247,35 @@ def test_print_exemption_and_explicit_exclusions() -> None:
             raise ConformanceError("SCANNER_FAILURE", f"explicit empty exclusions must scan everything: {files([])}")
 
 
+def test_env_defaults_in_js_and_shell() -> None:
+    """Env-lookup defaults are the env-dsl remedy in JS/TS and shell too."""
+    js = (
+        "const a = process.env.BASE_URL || 'http://localhost:8100';\n"   # 1 env default
+        "const b = import.meta.env.VITE_API ?? \"http://localhost:8106\";\n"  # 2 env default
+        "const c = config().PROTOCOL_URL || `http://localhost:8120/api`;\n"  # 3 config key default
+        "const d = res.value.ip || '192.168.1.100';\n"                    # 4 not a config key
+        "const e = 'http://localhost:8094/';\n"                           # 5 plain literal
+        "const f = process.env.BASE_URL || other || 'http://localhost:1234';\n"  # 6 not the key's default
+    )
+    hits = [v.line_number for v in scan_file_content(Path("app.ts"), js) if v.rule_id == "NOHARDCODE-006"]
+    if hits != [4, 5, 6]:
+        raise ConformanceError("SCANNER_FAILURE", f"JS env defaults wrong: {hits}")
+    sh = 'BASE="${CONNECT_RUNTIME_URL:-http://localhost:8115}"\nURL="http://localhost:8115"\n'
+    hits = [v.line_number for v in scan_file_content(Path("smoke.sh"), sh) if v.rule_id == "NOHARDCODE-006"]
+    if hits != [2]:
+        raise ConformanceError("SCANNER_FAILURE", f"shell env defaults wrong: {hits}")
+    code = "import time\ntime.sleep(5)\n"
+
+    def sleeps(name: str) -> bool:
+        return any(v.rule_id == "NOHARDCODE-011" for v in scan_file_content(Path(name), code, role_path=name))
+
+    production = ["latest.py", "contest/app.py", "attestation.py", "mockingbird.py"]
+    tooling = ["tests/test_a.py", "app_test.py", "fixtures/load.py", "bench/run.py", "conftest.py"]
+    wrong = [n for n in production if not sleeps(n)] + [n for n in tooling if sleeps(n)]
+    if wrong:
+        raise ConformanceError("SCANNER_FAILURE", f"sleep test exemption misclassified: {wrong}")
+
+
 def test_non_python_line_rules_and_coverage() -> None:
     """Line rules run on firmware/config files and coverage is reported."""
     import tempfile
@@ -344,6 +373,8 @@ def run_conformance() -> int:
         print("✓ Line rules cover firmware/config files and coverage is reported.")
         test_print_exemption_and_explicit_exclusions()
         print("✓ print() exemption matches path components; empty exclusions scan everything.")
+        test_env_defaults_in_js_and_shell()
+        print("✓ JS/TS and shell env-lookup defaults skipped; sleep test exemption matches path components.")
     except Exception as ex:
         print(f"✗ Coverage test failed: {ex}", file=sys.stderr)
         return 1
