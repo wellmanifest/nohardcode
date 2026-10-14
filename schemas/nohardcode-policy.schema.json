@@ -158,6 +158,21 @@
       "type": "array",
       "items": { "type": "string" },
       "description": "Glob patterns excluded from unhardcode audit (e.g. fixtures, test mocks)"
+    },
+    "waivers": {
+      "type": "array",
+      "description": "Reviewed exceptions for formats without comments (JSON); findings stay in the report as waived",
+      "items": {
+        "type": "object",
+        "required": ["path", "rule", "reason"],
+        "properties": {
+          "path": { "type": "string", "minLength": 1, "pattern": "^(?!/)(?!(.*/)?\\.\\.(/|$))[^*?\\[\\\\]+$" },
+          "rule": { "type": "string", "pattern": "^NOHARDCODE-[0-9]{3}$" },
+          "reason": { "type": "string", "pattern": "\\S" },
+          "match": { "type": "string", "minLength": 1 }
+        },
+        "additionalProperties": false
+      }
     }
   },
   "additionalProperties": false

@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ### Added
 - Reviewed inline waivers `# nohardcode: allow NOHARDCODE-NNN -- reason`:
   kept in the report as `waived` with the reason, never blocking (#5).
+- Waivers for formats without trailing comments: the pragma on the comment-only
+  line directly above a finding (Dockerfile), and exact policy `waivers`
+  (`path`, `rule`, `reason`, optional `match`) for JSON. The active policy file
+  is no longer scanned (#9).
 
 ### Fixed
 - Line rules also run on C/C++, `.oql`, `.toml`, `.tsx/.jsx`, `.conf`, `.ini`,

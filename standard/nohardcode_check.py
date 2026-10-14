@@ -158,6 +158,23 @@ def validate_policy_document(doc: dict[str, Any]) -> None:
     if not isinstance(rules, dict):
         raise ConformanceError("NOHARDCODE_POLICY_INVALID", "rules must be an object")
 
+    waivers = doc.get("waivers", [])
+    if not isinstance(waivers, list):
+        raise ConformanceError("NOHARDCODE_POLICY_INVALID", "waivers must be an array")
+    for waiver in waivers:
+        if not isinstance(waiver, dict) or set(waiver) - {"path", "rule", "reason", "match"}:
+            raise ConformanceError("NOHARDCODE_WAIVER_INVALID", "waiver must be {path, rule, reason, match?}")
+        path = waiver.get("path")
+        if (not isinstance(path, str) or not path or path.startswith("/") or "\\" in path
+                or any(ch in path for ch in "*?[") or ".." in path.split("/")):
+            raise ConformanceError("NOHARDCODE_WAIVER_INVALID", f"waiver path must be an exact relative path: {path!r}")
+        if not isinstance(waiver.get("rule"), str) or not re.fullmatch(r"NOHARDCODE-[0-9]{3}", waiver["rule"]):
+            raise ConformanceError("NOHARDCODE_WAIVER_INVALID", f"waiver rule must be NOHARDCODE-NNN: {waiver.get('rule')!r}")
+        if not isinstance(waiver.get("reason"), str) or not waiver["reason"].strip():
+            raise ConformanceError("NOHARDCODE_WAIVER_INVALID", f"waiver for {path} needs a non-empty reason")
+        if "match" in waiver and (not isinstance(waiver["match"], str) or not waiver["match"]):
+            raise ConformanceError("NOHARDCODE_WAIVER_INVALID", f"waiver match for {path} must be a non-empty string")
+
 
 def validate_detection_rule_document(doc: dict[str, Any]) -> None:
     """Validates detection rule document against detection-rule.schema.json."""
@@ -296,6 +313,22 @@ def _inside_env_default(line: str, position: int) -> bool:
         match.start("default") <= position < match.end("default")
         for match in RE_ENV_DEFAULT.finditer(line)
     )
+
+
+def apply_policy_waivers(violations: list[Violation], waivers: list[dict[str, Any]], root: Path) -> None:
+    """Mark findings covered by an exact policy waiver (path + rule [+ match]) as waived."""
+    for violation in violations:
+        if violation.waiver_reason is not None:
+            continue
+        try:
+            rel = Path(violation.file_path).resolve().relative_to(root.resolve()).as_posix()
+        except ValueError:
+            rel = violation.file_path
+        for waiver in waivers:
+            if (waiver["path"] == rel and waiver["rule"] == violation.rule_id
+                    and waiver.get("match", "") in violation.message):
+                violation.waiver_reason = waiver["reason"]
+                break
 
 
 def apply_policy_rules(violations: list[Violation], rules: dict[str, Any]) -> list[Violation]:
@@ -463,6 +496,12 @@ def scan_file_content(path: Path, content: str, profile: str = "balanced") -> li
     for violation in violations:
         if 1 <= violation.line_number <= len(lines):
             waiver = RE_WAIVER.search(lines[violation.line_number - 1])
+            # Formats without trailing comments (Dockerfile) waive on the
+            # comment-only line directly above the finding.
+            if not waiver and violation.line_number >= 2:
+                above = lines[violation.line_number - 2]
+                if _is_comment(above, path):
+                    waiver = RE_WAIVER.search(above)
             if waiver and waiver.group(1) == violation.rule_id:
                 violation.waiver_reason = waiver.group(2)
     return violations
@@ -562,6 +601,7 @@ def main() -> int:
                 break
 
     policy_rules: dict[str, Any] = {}
+    policy_waivers: list[dict[str, Any]] = []
     if policy_path.exists():
         try:
             p_data = json.loads(policy_path.read_text(encoding="utf-8"))
@@ -569,6 +609,7 @@ def main() -> int:
             policy_profile = p_data.get("profile", policy_profile)
             exclusions = p_data.get("exclusions")
             policy_rules = p_data.get("rules") or {}
+            policy_waivers = p_data.get("waivers") or []
         except ConformanceError as ce:
             print(f"Policy validation failed: {ce}", file=sys.stderr)
             return 1
@@ -584,6 +625,10 @@ def main() -> int:
         audit_repository(target_path, profile=policy_profile, exclusions=exclusions, coverage=coverage),
         policy_rules,
     )
+    apply_policy_waivers(violations, policy_waivers, target_path)
+    if policy_path.exists():
+        # The policy is the waiver registry; its own match strings are not findings.
+        violations = [v for v in violations if Path(v.file_path).resolve() != policy_path.resolve()]
 
     blocking_errors = [v for v in violations if v.severity == "error" and v.waiver_reason is None]
 
