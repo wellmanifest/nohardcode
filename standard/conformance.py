@@ -159,6 +159,60 @@ def test_inline_waiver() -> None:
         raise ConformanceError("WAIVER_FAILURE", f"unexpected waivers: {found}")
 
 
+def test_waiver_above_finding() -> None:
+    """Dockerfile has no trailing comments: a comment-only line directly above waives."""
+    code = (
+        "# nohardcode: allow NOHARDCODE-006 -- container probes its own port\n"
+        "HEALTHCHECK CMD curl -f http://127.0.0.1:8080/health\n"
+        "RUN echo http://127.0.0.1:9000\n"
+        "# nohardcode: allow NOHARDCODE-006 -- not directly above\n"
+        "\n"
+        "RUN echo http://127.0.0.1:9001\n"
+    )
+    found = {v.line_number: v.waiver_reason for v in scan_file_content(Path("Dockerfile"), code)
+             if v.rule_id == "NOHARDCODE-006"}
+    if found != {2: "container probes its own port", 3: None, 6: None}:
+        raise ConformanceError("WAIVER_FAILURE", f"unexpected waivers above findings: {found}")
+
+
+def test_policy_waivers() -> None:
+    """Exact path + rule (+ match) waivers cover comment-less formats such as JSON."""
+    import subprocess
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        (root / "cfg").mkdir()
+        (root / "cfg" / "ap.json").write_text('{\n  "ap": "192.168.4.1",\n  "peer": "192.168.1.20"\n}\n', encoding="utf-8")
+        (root / "other.json").write_text('{"ap": "192.168.4.1"}\n', encoding="utf-8")
+        policy = load_json(PACK / "nohardcode-policy.json")
+        policy["waivers"] = [{"path": "cfg/ap.json", "rule": "NOHARDCODE-006", "match": "192.168.4.1",
+                              "reason": "device SoftAP's own address"}]
+        (root / "nohardcode-policy.json").write_text(json.dumps(policy), encoding="utf-8")
+        result = subprocess.run(
+            [sys.executable, str(PACK / "standard" / "nohardcode_check.py"),
+             "--target", str(root), "--format", "json"],
+            capture_output=True, text=True, check=False,
+        )
+        out = json.loads(result.stdout)
+        waived = {(Path(v["file_path"]).name, v["line_number"], v.get("waiver_reason")) for v in out["violations"]}
+        expected = {("ap.json", 2, "device SoftAP's own address"), ("ap.json", 3, None), ("other.json", 1, None)}
+        if waived != expected or out["summary"]["errors"] != 2 or result.returncode != 1:
+            raise ConformanceError("POLICY_WAIVER_FAILURE", f"unexpected policy waivers: {sorted(waived, key=str)} rc={result.returncode}")
+    for bad in ({"path": "cfg/*.json", "rule": "NOHARDCODE-006", "reason": "x"},
+                {"path": "../ap.json", "rule": "NOHARDCODE-006", "reason": "x"},
+                {"path": "ap.json", "rule": "NOHARDCODE-006", "reason": " "},
+                {"path": "ap.json", "rule": "006", "reason": "x"},
+                {"path": "ap.json", "rule": "NOHARDCODE-006", "reason": "x", "scope": "all"}):
+        policy = load_json(PACK / "nohardcode-policy.json")
+        policy["waivers"] = [bad]
+        try:
+            validate_policy_document(policy)
+        except ConformanceError:
+            continue
+        raise ConformanceError("POLICY_WAIVER_FAILURE", f"invalid waiver accepted: {bad}")
+
+
 def test_non_python_line_rules_and_coverage() -> None:
     """Line rules run on firmware/config files and coverage is reported."""
     import tempfile
@@ -263,6 +317,14 @@ def run_conformance() -> int:
         print("✓ Inline waivers require a matching rule and a reason.")
     except Exception as ex:
         print(f"✗ Inline waiver test failed: {ex}", file=sys.stderr)
+        return 1
+
+    try:
+        test_waiver_above_finding()
+        test_policy_waivers()
+        print("✓ Waivers above findings and exact policy waivers work; vague waivers are rejected.")
+    except Exception as ex:
+        print(f"✗ Waiver extension test failed: {ex}", file=sys.stderr)
         return 1
 
     try:

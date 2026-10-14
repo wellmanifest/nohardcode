@@ -115,6 +115,33 @@ pragma without a reason, or naming another rule, has no effect. Waivers are
 for reviewed, local exceptions; disabling a rule repository-wide belongs in
 the policy `rules` map.
 
+Formats without trailing comments (Dockerfile, where `#` after an instruction
+is an argument) put the same pragma on a comment-only line directly above the
+finding:
+
+```dockerfile
+# nohardcode: allow NOHARDCODE-006 -- container probes its own port
+HEALTHCHECK CMD curl -f http://127.0.0.1:8080/health
+```
+
+### 2.2 Policy waivers
+
+JSON has no comments. Such exceptions are listed in the policy:
+
+```json
+"waivers": [
+  {"path": "main/controller_config.json", "rule": "NOHARDCODE-006",
+   "match": "192.168.4.1", "reason": "SoftAP's own address on the device"}
+]
+```
+
+`path` is an exact repository-relative path (no globs, no `..`), `rule` must
+match the finding, `reason` is mandatory and `match`, when given, must occur in
+the finding message. Covered findings are reported as waived exactly like
+inline waivers. An invalid waiver fails policy validation
+(`NOHARDCODE_WAIVER_INVALID`). The active policy file itself is not scanned,
+because its `match` strings are the reviewed values.
+
 ## 3. Conformance Profiles
 
 - **Strict**: All rules (`NOHARDCODE-001` through `NOHARDCODE-017`) are evaluated as blocking errors (`exit code 1`).
