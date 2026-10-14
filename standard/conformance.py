@@ -283,12 +283,14 @@ def test_env_file_loopback_values() -> None:
         "export WS=ws://127.0.0.1:8101\n"          # 2 loopback default
         "STACKNET=192.168.188.229:8080\n"          # 3 rig LAN pin
         "echo http://localhost:8100\n"             # 4 not an assignment
+        "BASE_URL = http://localhost:8080\n"       # 5 dotenv with spaces
+        "export API = http://127.0.0.1:9000\n"     # 6 dotenv with spaces
     )
     hits = [v.line_number for v in scan_file_content(Path(".env.fleet"), env) if v.rule_id == "NOHARDCODE-006"]
     if hits != [3, 4]:
         raise ConformanceError("SCANNER_FAILURE", f".env loopback/LAN handling wrong: {hits}")
     other = [v.line_number for v in scan_file_content(Path("settings.ini"), env) if v.rule_id == "NOHARDCODE-006"]
-    if other != [1, 2, 3, 4]:
+    if other != [1, 2, 3, 4, 5, 6]:
         raise ConformanceError("SCANNER_FAILURE", f"only .env files may carry loopback defaults: {other}")
 
 
