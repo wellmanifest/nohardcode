@@ -250,7 +250,7 @@ class CodeSmellVisitor(ast.NodeVisitor):
         self.role_path = filename if role_path is None else role_path
         self.violations: list[Violation] = []
         self._elif_chain_members: set[ast.If] = set()
-        self._direct_argv: set[ast.AST] = set()
+        self._verified_argv: set[ast.AST] = set()
 
     def visit_Module(self, node: ast.Module) -> None:
         # Resolve only top-level stdlib imports with a unique binding across
@@ -258,6 +258,7 @@ class CodeSmellVisitor(ast.NodeVisitor):
         # in unrelated scopes; no variable-name or executable-name exemption.
         apis = {"run", "Popen", "call", "check_call", "check_output"}
         bindings: dict[str, int] = {}
+        node_bindings: dict[ast.AST, list[str]] = {}
         nodes = list(ast.walk(node))
         for item in nodes:
             names: list[str] = []
@@ -276,6 +277,7 @@ class CodeSmellVisitor(ast.NodeVisitor):
                 names = [item.name]
             elif isinstance(item, ast.MatchMapping) and item.rest:
                 names = [item.rest]
+            node_bindings[item] = names
             for name in names:
                 bindings[name] = bindings.get(name, 0) + 1
 
@@ -296,6 +298,7 @@ class CodeSmellVisitor(ast.NodeVisitor):
         modules -= {item.value.id for item in nodes
                     if isinstance(item, ast.Attribute) and isinstance(item.ctx, (ast.Store, ast.Del))
                     and isinstance(item.value, ast.Name)}
+        verified_args: dict[ast.Call, Optional[ast.AST]] = {}
         for item in nodes:
             if not isinstance(item, ast.Call):
                 continue
@@ -308,8 +311,39 @@ class CodeSmellVisitor(ast.NodeVisitor):
             keyword_args = [kw.value for kw in item.keywords if kw.arg == "args"]
             argv = item.args[0] if item.args and not keyword_args else (
                 keyword_args[0] if not item.args and len(keyword_args) == 1 else None)
+            verified_args[item] = argv
             if isinstance(argv, (ast.List, ast.Tuple)):
-                self._direct_argv.add(argv)
+                self._verified_argv.add(argv)
+
+        parents = {child: parent for parent in nodes for child in ast.iter_child_nodes(parent)}
+        for parent in nodes:
+            for _, block in ast.iter_fields(parent):
+                if not isinstance(block, list) or not all(isinstance(s, ast.stmt) for s in block):
+                    continue
+                for assignment, following in zip(block, block[1:]):
+                    if (not isinstance(assignment, ast.Assign) or len(assignment.targets) != 1
+                            or not isinstance(assignment.targets[0], ast.Name)
+                            or not isinstance(assignment.value, (ast.List, ast.Tuple))
+                            or not isinstance(following, (ast.Expr, ast.Assign))):
+                        continue
+                    call = following.value
+                    if not isinstance(call, ast.Call):
+                        continue
+                    argv = verified_args.get(call)
+                    name = assignment.targets[0].id
+                    if not isinstance(argv, ast.Name) or argv.id != name:
+                        continue
+                    scope = parent
+                    while not isinstance(scope, (ast.Module, ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda, ast.ClassDef)):
+                        scope = parents[scope]
+                    scoped_nodes = list(ast.walk(scope))
+                    # Exactly one binding and one load: reject reuse, mutation,
+                    # aliases and alternate definitions, including nested scopes.
+                    # Global/nonlocal storage is deliberately left unclassified.
+                    if (sum(isinstance(n, ast.Name) and n.id == name for n in scoped_nodes) == 2
+                            and sum(node_bindings[n].count(name) for n in scoped_nodes) == 1
+                            and not any(isinstance(n, (ast.Global, ast.Nonlocal)) and name in n.names for n in scoped_nodes)):
+                        self._verified_argv.add(assignment.value)
         self.generic_visit(node)
 
     def visit_List(self, node: ast.List) -> None:
@@ -325,7 +359,7 @@ class CodeSmellVisitor(ast.NodeVisitor):
         self.generic_visit(node)
 
     def _check_literal_collection(self, node: ast.AST, col_type: str) -> None:
-        if node in self._direct_argv:
+        if node in self._verified_argv:
             return
         elts = getattr(node, "elts", [])
         if len(elts) > 5:

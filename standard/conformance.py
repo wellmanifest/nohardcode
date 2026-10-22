@@ -178,7 +178,6 @@ def test_direct_subprocess_argv_context() -> None:
         f"import subprocess\nsubprocess.run = router\nsubprocess.run({argv})\n",
         f"import subprocess\nsubprocess.run(None, vocabulary={argv})\n",
         f"import subprocess\nsubprocess.unknown({argv})\n",
-        f"import subprocess\ncmd = {argv}\nsubprocess.run(cmd)\n",
         f"import subprocess\nKEYWORDS = {argv}\n",
         f"import subprocess\nfrom unknown import *\nsubprocess.run({argv})\n",
         f"import subprocess\ntry:\n    pass\nexcept Exception as subprocess:\n    pass\nsubprocess.run({argv})\n",
@@ -228,6 +227,66 @@ subprocess.run(["tool", "--start", "-a", "-b", "-c", "echo ok",
                     or sorted(v["rule_id"] for v in found) != expected_rules
                     or any(v["severity"] != "error" for v in found)):
                 raise ConformanceError("SCANNER_FAILURE", "strict CLI argv/intent blocking contract changed")
+
+
+def test_adjacent_assigned_subprocess_argv_context() -> None:
+    argv = '["docker", "exec", "-i", "db", "psql", "-v", "ON_ERROR_STOP=1"]'
+    positive = [
+        f"import subprocess\ncmd = {argv}\nsubprocess.run(cmd)\n",
+        f"import subprocess\ndef f():\n    if ready:\n        cmd = {argv}\n        p = subprocess.Popen(cmd, stdout=subprocess.PIPE)\n",
+        f"from subprocess import run as launch\ncmd = {argv}\np = launch(args=cmd)\n",
+        f"import subprocess\ncmd = {argv.replace('[', '(', 1).replace(']', ')')}\nsubprocess.run(cmd)\n",
+    ]
+    negative = [
+        f"cmd = {argv}\nsubprocess.run(cmd)\n",
+        f"import subprocess\ncmd = {argv}\nother(cmd)\nsubprocess.run(cmd)\n",
+        f"import subprocess\ncmd = {argv}\nsubprocess.run(cmd)\nother(cmd)\n",
+        f"import subprocess\ncmd = {argv}\ncmd.append('help')\nsubprocess.run(cmd)\n",
+        f"import subprocess\ncmd = {argv}\ncmd = external\nsubprocess.run(cmd)\n",
+        f"import subprocess\ncmd = alias = {argv}\nsubprocess.run(cmd)\n",
+        f"import subprocess\ncmd = {argv}\nif ready:\n    subprocess.run(cmd)\n",
+        f"import subprocess\ncmd = {argv}\npass\nsubprocess.run(cmd)\n",
+        f"import subprocess\ncmd = {argv}\nrouter(cmd)\n",
+        f"import subprocess\ncmd = {argv}\nsubprocess.run(None, vocabulary=cmd)\n",
+        f"import subprocess\ncmd = {argv}\nsubprocess.run(cmd, env=mutate(cmd))\n",
+        f"import subprocess\ncmd = {argv}\nsubprocess.run(cmd)\ndef nested():\n    return cmd\n",
+        f"import subprocess\ndef f():\n    global cmd\n    cmd = {argv}\n    subprocess.run(cmd)\n",
+        f"import subprocess\ndef f(cmd):\n    cmd = {argv}\n    subprocess.run(cmd)\n",
+        f"import subprocess\nif ready:\n    cmd = {argv}\n    subprocess.run(cmd)\nelse:\n    cmd = []\n",
+    ]
+    for profile in ("balanced", "strict", "permissive"):
+        for expected, cases in ((0, positive), (1, negative)):
+            for code in cases:
+                found = [v for v in scan_file_content(Path("worker.py"), code, profile=profile)
+                         if v.rule_id == "NOHARDCODE-001"]
+                if len(found) != expected:
+                    raise ConformanceError("SCANNER_FAILURE", f"assigned argv {profile}: expected {expected}, got {len(found)}: {code}")
+                if found and found[0].severity != ("error" if profile == "strict" else "warning"):
+                    raise ConformanceError("SCANNER_FAILURE", "assigned argv NL severity changed")
+
+    import subprocess
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        for code, expected_exit, expected_rules in (
+            (positive[0], 0, []),
+            (negative[2], 1, ["NOHARDCODE-001"]),
+            (positive[0].replace('"ON_ERROR_STOP=1"', '"http://localhost:8080"'),
+             1, ["NOHARDCODE-006"]),
+            (positive[0].replace('"ON_ERROR_STOP=1"', '\'api_key="Abcdef1234567890Abcdef1234567890"\''),
+             1, ["NOHARDCODE-005"]),
+        ):
+            (root / "worker.py").write_text(code, encoding="utf-8")
+            result = subprocess.run(
+                [sys.executable, str(PACK / "standard/nohardcode_check.py"),
+                 "--target", str(root), "--profile", "strict", "--format", "json"],
+                capture_output=True, text=True, check=False,
+            )
+            found = json.loads(result.stdout)["violations"]
+            if (result.returncode != expected_exit
+                    or sorted(v["rule_id"] for v in found) != expected_rules
+                    or any(v["severity"] != "error" for v in found)):
+                raise ConformanceError("SCANNER_FAILURE", "assigned argv strict CLI changed blocking of unrelated rules or NL reuse")
 
 
 def test_policy_rules_are_applied() -> None:
@@ -492,6 +551,7 @@ def run_conformance() -> int:
         test_code_smell_scanner()
         test_conditional_chain_findings_are_distinct()
         test_direct_subprocess_argv_context()
+        test_adjacent_assigned_subprocess_argv_context()
         print("✓ Smell detection AST scanner verified against normative rules.")
     except Exception as ex:
         print(f"✗ Smell detection scanner test failed: {ex}", file=sys.stderr)
