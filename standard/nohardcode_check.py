@@ -250,6 +250,67 @@ class CodeSmellVisitor(ast.NodeVisitor):
         self.role_path = filename if role_path is None else role_path
         self.violations: list[Violation] = []
         self._elif_chain_members: set[ast.If] = set()
+        self._direct_argv: set[ast.AST] = set()
+
+    def visit_Module(self, node: ast.Module) -> None:
+        # Resolve only top-level stdlib imports with a unique binding across
+        # the file. This deliberately rejects ambiguous/shadowed names even
+        # in unrelated scopes; no variable-name or executable-name exemption.
+        apis = {"run", "Popen", "call", "check_call", "check_output"}
+        bindings: dict[str, int] = {}
+        nodes = list(ast.walk(node))
+        for item in nodes:
+            names: list[str] = []
+            if isinstance(item, ast.Name) and isinstance(item.ctx, (ast.Store, ast.Del)):
+                names = [item.id]
+            elif isinstance(item, ast.arg):
+                names = [item.arg]
+            elif isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                names = [item.name]
+            elif isinstance(item, (ast.Import, ast.ImportFrom)):
+                names = [alias.asname or (alias.name.split(".")[0] if isinstance(item, ast.Import) else alias.name)
+                         for alias in item.names]
+            elif isinstance(item, ast.ExceptHandler) and item.name:
+                names = [item.name]
+            elif isinstance(item, (ast.MatchAs, ast.MatchStar)) and item.name:
+                names = [item.name]
+            elif isinstance(item, ast.MatchMapping) and item.rest:
+                names = [item.rest]
+            for name in names:
+                bindings[name] = bindings.get(name, 0) + 1
+
+        # Star imports may replace any binding; keep the original findings.
+        if any(isinstance(item, ast.ImportFrom) and any(a.name == "*" for a in item.names) for item in nodes):
+            self.generic_visit(node)
+            return
+        modules: set[str] = set()
+        functions: set[str] = set()
+        for statement in node.body:
+            if isinstance(statement, ast.Import):
+                modules.update(a.asname or a.name for a in statement.names if a.name == "subprocess")
+            elif isinstance(statement, ast.ImportFrom) and statement.module == "subprocess" and statement.level == 0:
+                functions.update(a.asname or a.name for a in statement.names if a.name in apis)
+        modules = {name for name in modules if bindings.get(name) == 1}
+        functions = {name for name in functions if bindings.get(name) == 1}
+        # An explicit attribute replacement also makes the module ambiguous.
+        modules -= {item.value.id for item in nodes
+                    if isinstance(item, ast.Attribute) and isinstance(item.ctx, (ast.Store, ast.Del))
+                    and isinstance(item.value, ast.Name)}
+        for item in nodes:
+            if not isinstance(item, ast.Call):
+                continue
+            func = item.func
+            verified = (isinstance(func, ast.Name) and func.id in functions) or (
+                isinstance(func, ast.Attribute) and isinstance(func.value, ast.Name)
+                and func.value.id in modules and func.attr in apis)
+            if not verified:
+                continue
+            keyword_args = [kw.value for kw in item.keywords if kw.arg == "args"]
+            argv = item.args[0] if item.args and not keyword_args else (
+                keyword_args[0] if not item.args and len(keyword_args) == 1 else None)
+            if isinstance(argv, (ast.List, ast.Tuple)):
+                self._direct_argv.add(argv)
+        self.generic_visit(node)
 
     def visit_List(self, node: ast.List) -> None:
         self._check_literal_collection(node, "List")
@@ -264,6 +325,8 @@ class CodeSmellVisitor(ast.NodeVisitor):
         self.generic_visit(node)
 
     def _check_literal_collection(self, node: ast.AST, col_type: str) -> None:
+        if node in self._direct_argv:
+            return
         elts = getattr(node, "elts", [])
         if len(elts) > 5:
             str_literals = [e for e in elts if isinstance(e, ast.Constant) and isinstance(e.value, str)]

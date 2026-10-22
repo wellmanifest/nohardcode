@@ -158,6 +158,78 @@ def test_conditional_chain_findings_are_distinct() -> None:
         raise ConformanceError("SCANNER_FAILURE", "nested chain inside elif body was suppressed")
 
 
+def test_direct_subprocess_argv_context() -> None:
+    """Only direct argv of an unshadowed stdlib subprocess import is technical."""
+    argv = '["ssh", "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=5", target, "echo ok"]'
+    positive = [
+        f"import subprocess\nsubprocess.{api}({argv})\n"
+        for api in ("run", "Popen", "call", "check_call", "check_output")
+    ] + [
+        f"import subprocess as sp\nsp.run(args={argv})\n",
+        f"from subprocess import run as launch\nlaunch({argv})\n",
+        f"import subprocess\nsubprocess.run({argv.replace('[', '(', 1).replace(']', ')')})\n",
+    ]
+    negative = [
+        f"subprocess.run({argv})\n",  # no verified import
+        f"import other as subprocess\nsubprocess.run({argv})\n",
+        f"from other import run\nrun({argv})\n",
+        f"import subprocess\ndef f(subprocess):\n    subprocess.run({argv})\n",
+        f"from subprocess import run\nrun = router\nrun({argv})\n",
+        f"import subprocess\nsubprocess.run = router\nsubprocess.run({argv})\n",
+        f"import subprocess\nsubprocess.run(None, vocabulary={argv})\n",
+        f"import subprocess\nsubprocess.unknown({argv})\n",
+        f"import subprocess\ncmd = {argv}\nsubprocess.run(cmd)\n",
+        f"import subprocess\nKEYWORDS = {argv}\n",
+        f"import subprocess\nfrom unknown import *\nsubprocess.run({argv})\n",
+        f"import subprocess\ntry:\n    pass\nexcept Exception as subprocess:\n    pass\nsubprocess.run({argv})\n",
+        f"import subprocess\nmatch value:\n    case subprocess:\n        subprocess.run({argv})\n",
+        f"import subprocess\ndef subprocess():\n    pass\nsubprocess.run({argv})\n",
+        f"def f():\n    import subprocess\n    subprocess.run({argv})\n",
+        f"import subprocess as sp\nsp = router\nsp.run({argv})\n",
+        f"import subprocess\nsubprocess.run({argv.replace('[', '{', 1).replace(']', '}')})\n",
+    ]
+    for profile in ("balanced", "strict", "permissive"):
+        for expected, cases in ((0, positive), (1, negative)):
+            for code in cases:
+                found = [v for v in scan_file_content(Path("worker.py"), code, profile=profile)
+                         if v.rule_id == "NOHARDCODE-001"]
+                if len(found) != expected:
+                    raise ConformanceError("SCANNER_FAILURE", f"argv context {profile}: expected {expected}, got {len(found)}: {code}")
+                if found and found[0].severity != ("error" if profile == "strict" else "warning"):
+                    raise ConformanceError("SCANNER_FAILURE", "NL dispatch severity changed")
+
+    # A technical argv context must retain line rules and nested NL collections.
+    code = '''import subprocess
+subprocess.run(["tool", "--start", "-a", "-b", "-c", "echo ok",
+    "http://localhost:8080",
+    'api_key="Abcdef1234567890Abcdef1234567890"',
+    ["open one", "open two", "open three", "open four", "open five", "open six"]])
+'''
+    rules = [v.rule_id for v in scan_file_content(Path("worker.py"), code, profile="strict")]
+    if sorted(rules) != ["NOHARDCODE-001", "NOHARDCODE-005", "NOHARDCODE-006"]:
+        raise ConformanceError("SCANNER_FAILURE", f"argv hid unrelated findings: {rules}")
+
+    import subprocess
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        for source, expected_exit, expected_rules in (
+            (positive[0], 0, []), (negative[0], 1, ["NOHARDCODE-001"]),
+            (code, 1, ["NOHARDCODE-001", "NOHARDCODE-005", "NOHARDCODE-006"]),
+        ):
+            (root / "worker.py").write_text(source, encoding="utf-8")
+            result = subprocess.run(
+                [sys.executable, str(PACK / "standard/nohardcode_check.py"),
+                 "--target", str(root), "--profile", "strict", "--format", "json"],
+                capture_output=True, text=True, check=False,
+            )
+            found = json.loads(result.stdout)["violations"]
+            if (result.returncode != expected_exit
+                    or sorted(v["rule_id"] for v in found) != expected_rules
+                    or any(v["severity"] != "error" for v in found)):
+                raise ConformanceError("SCANNER_FAILURE", "strict CLI argv/intent blocking contract changed")
+
+
 def test_policy_rules_are_applied() -> None:
     """Per-rule enabled/severity in a repository policy must change the result."""
     import subprocess
@@ -419,6 +491,7 @@ def run_conformance() -> int:
     try:
         test_code_smell_scanner()
         test_conditional_chain_findings_are_distinct()
+        test_direct_subprocess_argv_context()
         print("✓ Smell detection AST scanner verified against normative rules.")
     except Exception as ex:
         print(f"✗ Smell detection scanner test failed: {ex}", file=sys.stderr)
