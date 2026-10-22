@@ -17,4 +17,4 @@ Fail-closed rules:
 2. Never hardcode absolute pixel coordinates for UI interactions when YOLO or OCR bounding boxes are available.
 3. Never embed plaintext credentials, API keys, or bearer tokens; adopt `wellmanifest/secrets`.
 4. Never embed hardcoded hostnames, ports, or environment-dependent paths; adopt `wellmanifest/env-dsl` and `account-runtime`.
-5. Run `python3 standard/nohardcode_check.py --all` before claiming conformance.
+5. Run `python3 standard/conformance.py --all` before claiming conformance.

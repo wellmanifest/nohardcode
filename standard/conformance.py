@@ -121,6 +121,43 @@ MIXED = os.getenv("PORT", "8080") or "localhost:9090"
         )
 
 
+
+def test_conditional_chain_findings_are_distinct() -> None:
+    """Only chain heads report; nested and adjacent chains remain independent."""
+    def chain(length: int, indent: str = "") -> str:
+        return "".join(
+            f"{indent}{'if' if index == 0 else 'elif'} flag == {index}:\n{indent}    pass\n"
+            for index in range(length)
+        )
+
+    def findings(code: str, profile: str = "balanced") -> list:
+        return [v for v in scan_file_content(Path("business_rules.py"), code, profile=profile)
+                if v.rule_id == "NOHARDCODE-004"]
+
+    for profile in ("balanced", "strict", "permissive"):
+        for length in (4, 5, 8):
+            found = findings(chain(length), profile)
+            expected = [] if length == 4 else [1]
+            if [v.line_number for v in found] != expected:
+                raise ConformanceError("SCANNER_FAILURE", f"duplicate chain findings: {profile}/{length}: {found}")
+            for violation in found:
+                severity = "error" if profile == "strict" else "warning"
+                if violation.severity != severity or f"({length} branches)" not in violation.message:
+                    raise ConformanceError("SCANNER_FAILURE", "conditional chain severity or depth changed")
+
+    first = chain(6)
+    adjacent = first + "\n" + chain(5)
+    if [v.line_number for v in findings(adjacent)] != [1, len(first.splitlines()) + 2]:
+        raise ConformanceError("SCANNER_FAILURE", "adjacent independent chains were merged")
+    nested = first.replace("    pass\n", chain(6, "    "), 1)
+    if [v.line_number for v in findings(nested)] != [1, 2]:
+        raise ConformanceError("SCANNER_FAILURE", "nested independent chain was suppressed")
+    prefix, _ = chain(5).rsplit("    pass\n", 1)
+    nested_in_elif = prefix + chain(6, "    ")
+    if [v.line_number for v in findings(nested_in_elif)] != [1, len(prefix.splitlines()) + 1]:
+        raise ConformanceError("SCANNER_FAILURE", "nested chain inside elif body was suppressed")
+
+
 def test_policy_rules_are_applied() -> None:
     """Per-rule enabled/severity in a repository policy must change the result."""
     import subprocess
@@ -381,6 +418,7 @@ def run_conformance() -> int:
     # 5. Scanner Unit Test
     try:
         test_code_smell_scanner()
+        test_conditional_chain_findings_are_distinct()
         print("✓ Smell detection AST scanner verified against normative rules.")
     except Exception as ex:
         print(f"✗ Smell detection scanner test failed: {ex}", file=sys.stderr)

@@ -249,6 +249,7 @@ class CodeSmellVisitor(ast.NodeVisitor):
         # directories above the scanned root must not influence it.
         self.role_path = filename if role_path is None else role_path
         self.violations: list[Violation] = []
+        self._elif_chain_members: set[ast.If] = set()
 
     def visit_List(self, node: ast.List) -> None:
         self._check_literal_collection(node, "List")
@@ -288,12 +289,17 @@ class CodeSmellVisitor(ast.NodeVisitor):
                     )
 
     def visit_If(self, node: ast.If) -> None:
+        if node in self._elif_chain_members:
+            # Still visit the body: it may contain an independent nested chain.
+            self.generic_visit(node)
+            return
         # Check depth of elif chains (NOHARDCODE-004: Declarative Business Logic)
         depth = 0
         curr: Optional[ast.AST] = node
         while curr and isinstance(curr, ast.If):
             depth += 1
             if curr.orelse and len(curr.orelse) == 1 and isinstance(curr.orelse[0], ast.If):
+                self._elif_chain_members.add(curr.orelse[0])
                 curr = curr.orelse[0]
             else:
                 break
