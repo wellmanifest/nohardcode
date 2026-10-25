@@ -491,11 +491,11 @@ def apply_policy_rules(violations: list[Violation], rules: dict[str, Any]) -> li
 
 # Line rules (005/006/009/011) are language-neutral; AST rules stay Python-only.
 SCANNED_SUFFIXES = frozenset({
-    ".py", ".ts", ".tsx", ".js", ".jsx", ".json", ".sh", ".yaml", ".yml",
+    ".py", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".json", ".sh", ".yaml", ".yml",
     ".c", ".h", ".cc", ".cpp", ".hpp", ".oql", ".toml", ".conf", ".ini",
     ".service", ".container",
 })
-_SLASH_COMMENT_SUFFIXES = frozenset({".c", ".h", ".cc", ".cpp", ".hpp", ".ts", ".tsx", ".js", ".jsx"})
+_SLASH_COMMENT_SUFFIXES = frozenset({".c", ".h", ".cc", ".cpp", ".hpp", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"})
 
 
 def is_scanned_file(name: str) -> bool:
