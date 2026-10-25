@@ -498,6 +498,58 @@ def test_non_python_line_rules_and_coverage() -> None:
             raise ConformanceError("COVERAGE_FAILURE", f"files={files} coverage={coverage}")
 
 
+def test_javascript_module_cli_coverage() -> None:
+    """Module discovery and comments keep the existing CLI/policy contract."""
+    import subprocess
+    import tempfile
+
+    for suffix in (".mjs", ".cjs", ".MJS"):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "repo"
+            root.mkdir()
+            (root / "excluded").mkdir()
+            module = root / ("service" + suffix)
+            safe = (
+                "// Example endpoint: http://localhost:8120\n"
+                "/* Example endpoint: http://localhost:8121 */\n"
+                "const endpoint = process.env.API_URL || 'http://localhost:8122';\n"
+            )
+            module.write_text(safe + "const rigid = 'http://localhost:8123';\n", encoding="utf-8")
+            (root / "excluded" / ("vendor" + suffix)).write_text(
+                "const endpoint = 'http://localhost:8124';\n", encoding="utf-8",
+            )
+            (root / "opaque.unsupported").write_text("http://localhost:8125\n", encoding="utf-8")
+            policy = load_json(PACK / "nohardcode-policy.json")
+            policy["exclusions"] = ["excluded/**"]
+            policy_path = Path(temporary) / "policy.json"
+            policy_path.write_text(json.dumps(policy), encoding="utf-8")
+
+            def run() -> tuple[int, dict]:
+                result = subprocess.run(
+                    [sys.executable, str(PACK / "standard/nohardcode_check.py"),
+                     "--target", str(root), "--policy", str(policy_path), "--format", "json"],
+                    capture_output=True, text=True, check=False,
+                )
+                return result.returncode, json.loads(result.stdout)
+
+            code, report = run()
+            hits = [(Path(v["file_path"]).name, v["line_number"], v["rule_id"])
+                    for v in report["violations"]]
+            expected_coverage = {"scanned": 1, "excluded_by_policy": 1, "unsupported": 1}
+            if (code != 1 or report["summary"]["errors"] != 1
+                    or hits != [(module.name, 4, "NOHARDCODE-006")]
+                    or report["summary"]["coverage"] != expected_coverage):
+                raise ConformanceError(
+                    "SCANNER_FAILURE", f"JavaScript module CLI coverage incorrect for {suffix}: {report}",
+                )
+            module.write_text(safe, encoding="utf-8")
+            code, report = run()
+            if code != 0 or report["violations"] or report["summary"]["coverage"] != expected_coverage:
+                raise ConformanceError(
+                    "SCANNER_FAILURE", f"Module comments/env defaults incorrectly flagged for {suffix}: {report}",
+                )
+
+
 def run_conformance() -> int:
     print("=== Wellmanifest No-Hardcode Conformance Suite ===")
 
@@ -559,6 +611,7 @@ def run_conformance() -> int:
 
     try:
         test_non_python_line_rules_and_coverage()
+        test_javascript_module_cli_coverage()
         print("✓ Line rules cover firmware/config files and coverage is reported.")
         test_print_exemption_and_explicit_exclusions()
         print("✓ print() exemption matches path components; empty exclusions scan everything.")
