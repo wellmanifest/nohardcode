@@ -12,20 +12,20 @@ Status: `0.2.0-dev`.
 ## 2. Normative Rules
 
 ### `NOHARDCODE-001`: Natural Language & Intent Decoupling
-1. Codebases MUST NOT maintain static arrays of more than 5 natural language keyword literals for intent classification where semantic classification is required.
-2. User intent mapping MUST use a semantic router, embedding model, or local LLM prompt (`wellmanifest/nl-dsl-llm`) with tolerance for grammatical inflection, typos, and phrasing variations.
+1. Codebases MUST NOT maintain static arrays (`list`, `tuple`, `set`), pipe-delimited phrase helper strings (`_phrases("a|b|...")`, `"a|b|...".split("|")`), or regex keyword alternation groups (`>= 6` natural language word branches) of more than 5 natural language keyword literals for intent classification where semantic classification is required.
+2. User intent mapping MUST use a semantic router, embedding model, or local LLM prompt (`wellmanifest/nl-dsl-llm`, `wellmanifest/nl-uri-dsl-llm`) with tolerance for grammatical inflection, typos, and phrasing variations.
 3. Keyword lists in legacy bridges MUST provide a deterministic fallback or escalation to an LLM evaluator before raising an unknown-command error.
 
 ### `NOHARDCODE-002`: UI Spatial Coordinate Decoupling
-1. Automation scripts MUST NOT emit fixed, hardcoded absolute mouse click coordinates `(x, y)` without explicit dynamic bounding box calculation.
+1. Automation scripts MUST NOT emit fixed, hardcoded absolute mouse click coordinates `(x, y)` (positional or keyword `x=..., y=...`) without explicit dynamic bounding box calculation.
 2. Element positioning MUST be derived dynamically using visual object detection (YOLO / `twinerd-vision`), accessibility trees, or OCR text bounding boxes.
 
 ### `NOHARDCODE-003`: Visual Label & Text Dynamic Extraction
-1. Canvas, VNC, and KVM screen interactions MUST use OCR (Tesseract OCR / EasyOCR) to dynamically localize target text elements when DOM selectors are unavailable.
+1. Canvas, VNC, and KVM screen interactions MUST use OCR (Tesseract OCR / EasyOCR) to dynamically localize target text elements when DOM selectors are unavailable, and MUST NOT rely on brittle multi-index positional XPath or `nth-child` CSS chains.
 2. OCR confidence thresholds MUST be configurable per environment (defaulting to `>= 60.0`).
 
 ### `NOHARDCODE-004`: Declarative Business Logic (JEV / Policy DSL)
-1. Multi-branch decision logic containing more than 3 consecutive conditional branches based on data values SHOULD be externalized into declarative JSON/YAML expressions (JEV / JSONLogic / `wellmanifest/policy-dsl`).
+1. Multi-branch decision logic containing more than 4 consecutive conditional branches based on data values, or branching directly on hardcoded ticket/issue IDs (`PLF-*`, `TICKET-*`, `ISS-*`, `GH-*`), SHOULD be externalized into declarative JSON/YAML expressions (JEV / JSONLogic / `wellmanifest/policy-dsl`).
 2. Hardcoded thresholds and coefficients MUST be loadable from external policy manifests.
 
 ### `NOHARDCODE-005`: Plaintext Credential Prohibition
@@ -50,8 +50,8 @@ Status: `0.2.0-dev`.
 2. Paths MUST be resolved dynamically via standard platform APIs (`Path.home()`, `XDG_*`, or `tempfile`) and bounded runtime leases (`wellmanifest/account-runtime`).
 
 ### `NOHARDCODE-010`: Code Duplication & Shared Module Reuse
-1. Codebases MUST NOT copy-paste identical logic across multiple repositories or subdirectories.
-2. Duplication detected by AST analysis (`semcod/redup`) MUST be extracted into modular packages under `packages/` or dedicated micro-libraries conforming to `wellmanifest/reuse` and `wellmanifest/modularity`.
+1. Codebases MUST NOT copy-paste identical function bodies (`>= 4` AST statements) or duplicate environment-variable endpoint defaults (`os.getenv` / `os.environ.get`) across multiple modules.
+2. Duplication detected by AST analysis (`semcod/redup`, `nohardcode_check.py`) MUST be extracted into a single canonical helper or `config_binding` source conforming to `wellmanifest/ssot`, `wellmanifest/reuse`, and `wellmanifest/modularity`.
 
 ### `NOHARDCODE-011`: Adaptive Thresholds, Timeouts & Rate Governors
 1. Applications MUST NOT rely on arbitrary, hardcoded static sleeps (`sleep(5)`), fixed timeouts, or static retry limits in production workflows.
@@ -59,17 +59,17 @@ Status: `0.2.0-dev`.
 3. Concurrency limits and batch sizes MUST scale adaptively based on available memory, queue depth, and provider token-rate feedback.
 
 ### `NOHARDCODE-012`: Resilient Schema Extraction & Document/DOM Decoding
-1. Ingestion and automation pipelines MUST NOT hardcode rigid, brittle single-path object navigation (e.g. deep static dict key chains) or fragile regex parsers that break on upstream schema evolution or UI redesigns.
+1. Ingestion and automation pipelines MUST NOT hardcode rigid, brittle single-path object navigation (such as chained constant string dictionary subscripts of depth `>= 4`) or fragile regex parsers that break on upstream schema evolution or UI redesigns.
 2. Extraction MUST use tolerant recursive tree visitors with candidate node filtering, schema-guided healing, or zero-shot structured LLM/vision fallback extractors (`wellmanifest/nl-dsl-llm`).
 3. When parsing structured web/API payloads, parsers MUST maintain multi-tier fallback ladders (primary component $\to$ secondary component $\to$ semantic extraction) rather than failing closed on non-critical format deviations.
 
 ### `NOHARDCODE-013`: Dynamic Model, Provider & Engine Capabilities Routing
-1. AI agent systems MUST NOT hardcode specific proprietary model strings (e.g. `"gpt-4o"`, `"claude-3-5-sonnet"`) or provider endpoints directly into operational task handlers.
-2. Model invocation MUST be dispatched through a Capability-Based Model Router (`wellmanifest/llm`, `wellmanifest/nl-dsl-llm`) specifying abstract requirements (e.g. `speed: low-latency`, `reasoning: deep`, `context_budget: 128k`, `offline_capable: true`).
+1. AI agent systems MUST NOT hardcode specific proprietary or open-weights model strings (e.g. `"gpt-4o"`, `"claude-3-5-sonnet"`, `"qwen3.5:0.8b"`, `"llama3:8b"`, `"deepseek-r1"`) or provider endpoints directly into operational task handlers.
+2. Model invocation MUST be dispatched through a Capability-Based Model Router (`wellmanifest/llm`, `wellmanifest/nl-dsl-llm`, `wellmanifest/nl-uri-dsl-llm`) specifying abstract requirements (e.g. `speed: low-latency`, `reasoning: deep`, `context_budget: 128k`, `offline_capable: true`).
 3. Systems MUST implement dynamic fallback cascades: Local Embedded/ONNX/Ollama $\to$ Cloud API $\to$ degraded deterministic heuristic fallback.
 
 ### `NOHARDCODE-014`: Declarative Goal-Driven DAG Planning & Reactive Workflows
-1. Multi-step operations MUST NOT be hardcoded into rigid procedural functions or static step-by-step sequences.
+1. Multi-step operations MUST NOT be hardcoded into rigid procedural functions, imperative retry loops with fixed `sleep()` delays, or static step-by-step sequences.
 2. Complex workflows MUST be structured as declarative Directed Acyclic Graphs (DAG) or Goal-Driven Plans evaluated by an execution engine (`wellmanifest/poa`).
 3. Workflow engines MUST support autonomous self-healing reflection loops (Plan-Act-Observe-Diagnose-Repair) and reactive CQRS event chains (`wellmanifest/repair-lifecycle`) to recover from unexpected environmental drift.
 
@@ -78,11 +78,11 @@ Status: `0.2.0-dev`.
 2. Runtimes MUST discover display sockets dynamically (X11 / Wayland / Xvnc), probe hardware capabilities via standard APIs (`os.sched_getaffinity()`, `torch.cuda.is_available()`, Vulkan/OpenCL probes), and dynamically scale canvas/viewport dimensions.
 
 ### `NOHARDCODE-016`: Fuzzy Phonetic Matching & Lexical Resilience
-1. Natural language and voice processing systems MUST NOT rely solely on hardcoded static dictionaries of phonetic typo variants, dialect slang, or grammatical inflections.
-2. Systems MUST combine fuzzy string metrics (Levenshtein edit distance, Jaro-Winkler) and phonetic algorithms (Double Metaphone, Soundex) with vector embedding nearest-neighbor search and LLM context disambiguation.
+1. Natural language and voice processing systems MUST NOT rely solely on hardcoded static dictionaries of phonetic typo variants (`>= 6` surface keys mapping to `<= 2` target values), dialect slang, or regex suffix-stripping stemmers (`re.sub(r"(?:...)$", "", word)`).
+2. Systems MUST combine fuzzy string metrics (Levenshtein edit distance, Jaro-Winkler) and phonetic algorithms (Double Metaphone, Soundex) with vector embedding nearest-neighbor search and LLM context disambiguation (`wellmanifest/nl-uri-dsl-llm`).
 
 ### `NOHARDCODE-017`: Feedback-Driven Prioritization & Dynamic Scoring
-1. Decision, recommendation, and scheduling engines MUST NOT hardcode fixed linear scoring equations or arbitrary static prioritization weights.
+1. Decision, recommendation, and scheduling engines MUST NOT hardcode fixed linear scoring equations (`w1 * x + w2 * y` with static float coefficients) or arbitrary static prioritization weights.
 2. Priority scores and recommendation rankings MUST adjust adaptively using online feedback loops, Multi-Armed Bandit policies (Thompson Sampling / Upper Confidence Bound), and outcome tracking (`wellmanifest/saas-lifecycle`, `wellmanifest/agent`).
 
 ---

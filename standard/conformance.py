@@ -550,6 +550,97 @@ def test_javascript_module_cli_coverage() -> None:
                 )
 
 
+def test_all_17_normative_rules_and_ssot_gaps() -> None:
+    """Verify all 17 normative rules (NOHARDCODE-001..017) and SSOT cross-file config drift."""
+    import tempfile
+    from nohardcode_check import audit_repository
+
+    # 1. Single-file comprehensive snippet triggering all 17 rules
+    comprehensive = '''
+import asyncio
+import re
+import time
+import pyautogui
+
+KEYWORDS = ["uruchom", "włącz", "graj", "otwórz", "startuj", "odtwarzaj"]
+PIPE_PHRASES = _phrases("sprawdź stan|zbadaj usługi|pokaż status|uruchom ponownie|napraw błędy|wykonaj zadanie")
+RE_INTENT = re.compile(r"\\b(wykonaj|zrealizuj|uruchom|zrób|przerób|obsłuż|napraw)\\b")
+STEM_MAP = {"drugi": 2, "drugiego": 2, "drogi": 2, "druga": 2, "drugie": 2, "drugim": 2}
+
+def helper_alpha(data):
+    x = data.get("a", 1)
+    y = data.get("b", 2)
+    z = x + y
+    return z * 2
+
+def helper_beta(data):
+    x = data.get("a", 1)
+    y = data.get("b", 2)
+    z = x + y
+    return z * 2
+
+def bad_worker(payload, tid, urgency, impact):
+    api_key = "abcdef1234567890abcdef1234567890"
+    pyautogui.click(x=1420, y=865)
+    selector = "//div[2]/span[1]"
+    if tid in ("PLF-17026", "PLF-17027"):
+        return "publication-intake"
+    print("starting worker on localhost:7070")
+    owner_email = "jan.kowalski@firma.pl"
+    home_dir = "/home/tom/data"
+    nested_val = payload["response"]["body"]["items"]["title"]
+    model = "qwen3.5:0.8b"
+    device = "cuda:0"
+    for attempt in range(3):
+        time.sleep(2.5)
+    score = 0.7 * urgency + 0.3 * impact
+    return selector, owner_email, home_dir, nested_val, model, device, score
+'''
+    found = scan_file_content(Path("worker_all.py"), comprehensive, profile="strict")
+    found_rules = {v.rule_id for v in found}
+    all_17 = {f"NOHARDCODE-{i:03d}" for i in range(1, 18)}
+    missing = all_17 - found_rules
+    if missing:
+        raise ConformanceError("SCANNER_FAILURE", f"Scanner missed normative rules out of 001..017: {sorted(missing)}")
+
+    # Verify pipe-delimited and regex keyword alternations both emit NOHARDCODE-001
+    nhc001_lines = sorted(v.line_number for v in found if v.rule_id == "NOHARDCODE-001")
+    if nhc001_lines != [7, 8, 9]:
+        raise ConformanceError("SCANNER_FAILURE", f"Expected NOHARDCODE-001 on lines [7, 8, 9], got {nhc001_lines}")
+
+    # Verify version strings (yaml@1.2, asyncapi@3.0.0) and RFC 2606 .test domains do not trigger NOHARDCODE-008
+    non_pii = 'SPEC = "asyncapi@3.0.0"\nYAML = "yaml@1.2"\nTEST_USER = "operator@example.test"\n'
+    non_pii_hits = [v for v in scan_file_content(Path("config.py"), non_pii, profile="strict") if v.rule_id == "NOHARDCODE-008"]
+    if non_pii_hits:
+        raise ConformanceError("SCANNER_FAILURE", f"Unexpected NOHARDCODE-008 false positives: {non_pii_hits}")
+
+    # Verify arbitrary wrapper function (_synonyms("...")) with pipe-delimited NL phrases is caught in production code
+    syn_code = 'VERBS = _synonyms("pokaż|pokaz|wypisz|wyświetl|lista|listuj")\n'
+    syn_hits = [v for v in scan_file_content(Path("parser.py"), syn_code, profile="strict") if v.rule_id == "NOHARDCODE-001"]
+    if len(syn_hits) != 1:
+        raise ConformanceError("SCANNER_FAILURE", f"Expected _synonyms pipe string to trigger NOHARDCODE-001, got {syn_hits}")
+
+    # Verify cross-file duplicate env endpoint defaults emit NOHARDCODE-010
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        (root / "config.py").write_text(
+            'import os\nPLANFILE_URL = os.environ.get("SUBACTOR_PLANFILE_URL", "http://127.0.0.1:18769")\n',
+            encoding="utf-8",
+        )
+        (root / "consumer.py").write_text(
+            'import os\nURL = os.environ.get("SUBACTOR_PLANFILE_URL", "http://127.0.0.1:18769")\n',
+            encoding="utf-8",
+        )
+        repo_violations = audit_repository(root, profile="strict")
+        dup_hits = [
+            (Path(v.file_path).name, v.line_number, v.rule_id)
+            for v in repo_violations
+            if v.rule_id == "NOHARDCODE-010"
+        ]
+        if dup_hits != [("consumer.py", 2, "NOHARDCODE-010")]:
+            raise ConformanceError("SCANNER_FAILURE", f"Expected cross-file env default NOHARDCODE-010, got {dup_hits}")
+
+
 def run_conformance() -> int:
     print("=== Wellmanifest No-Hardcode Conformance Suite ===")
 
@@ -604,6 +695,7 @@ def run_conformance() -> int:
         test_conditional_chain_findings_are_distinct()
         test_direct_subprocess_argv_context()
         test_adjacent_assigned_subprocess_argv_context()
+        test_all_17_normative_rules_and_ssot_gaps()
         print("✓ Smell detection AST scanner verified against normative rules.")
     except Exception as ex:
         print(f"✗ Smell detection scanner test failed: {ex}", file=sys.stderr)
