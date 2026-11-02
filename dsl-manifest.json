@@ -64,7 +64,7 @@
       "id": "doc:specification",
       "path": "docs/SPEC.md",
       "mediaType": "text/markdown",
-      "purpose": "Normative specifications and compliance levels (NOHARDCODE-001 through NOHARDCODE-010)"
+      "purpose": "Normative specifications and compliance levels (NOHARDCODE-001 through NOHARDCODE-017)"
     },
     {
       "id": "doc:architecture",

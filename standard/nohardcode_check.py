@@ -72,23 +72,63 @@ ENV_DEFAULT_PATTERNS = (RE_ENV_DEFAULT, RE_ENV_DEFAULT_JS, RE_ENV_DEFAULT_SHELL)
 # Reviewed exception on the flagged line; the rule id must match and a
 # reason is mandatory. Waived findings stay in the report but do not block.
 RE_WAIVER = re.compile(r"#\s*nohardcode:\s*allow\s+(NOHARDCODE-\d{3})\s+--\s+(\S.*?)\s*$")
-RE_HARDCODED_HOME = re.compile(
-    r'["\'](/home/[a-zA-Z0-9._-]+|[A-Z]:\\[Uu]sers\\[a-zA-Z0-9._-]+)'
-)
 RE_HARDCODED_COORDINATES = re.compile(
-    r'\b(click|moveTo|mouse_down|mouse_up|dragTo)\s*\(\s*(\d{2,4})\s*,\s*(\d{2,4})\s*\)'
+    r'\b(click|moveTo|mouse_down|mouse_up|dragTo)\s*\(\s*(?:x\s*=\s*)?(\d{2,4})\s*,\s*(?:y\s*=\s*)?(\d{2,4})\s*\)'
+)
+RE_BRITTLE_UI_SELECTOR = re.compile(
+    r'(?://[a-zA-Z0-9_-]+\[\d+\]/[a-zA-Z0-9_-]+\[\d+\]|nth-child\(\d+\)\s*>\s*[^"\'\n]*nth-child\(\d+\))'
+)
+RE_TICKET_ID_LITERAL = re.compile(r"^(?:PLF|TICKET|ISS|GH)-[0-9]{2,}$")
+RE_BEARER_OR_TOKEN_LITERAL = re.compile(
+    r'["\'](?:Bearer\s+eyJ[A-Za-z0-9_-]{16,}|sk-(?:proj-)?[A-Za-z0-9_-]{20,}|gh[pousr]_[A-Za-z0-9_]{20,})["\']'
+)
+RE_HARDCODED_PII_EMAIL = re.compile(
+    r'["\']([a-zA-Z0-9_.+-]+@((?:[a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}))["\']'
+)
+SAFE_EMAIL_DOMAINS = frozenset({
+    "example.com",
+    "example.org",
+    "example.net",
+    "example.test",
+    "test.local",
+    "localhost",
+    "users.noreply.github.com",
+    "wellmanifest.com",
+    "wellmanifest.dev",
+})
+SAFE_EMAIL_TLDS = frozenset({
+    ".test",
+    ".example",
+    ".invalid",
+    ".localhost",
+    ".local",
+})
+RE_HARDCODED_HOME = re.compile(
+    r'["\'](/home/[a-zA-Z0-9._-]+|/Users/[a-zA-Z0-9._-]+|[A-Z]:\\[Uu]sers\\[a-zA-Z0-9._-]+)'
 )
 RE_HARDCODED_SLEEP = re.compile(
     r'\b(?:time\.sleep|asyncio\.sleep)\s*\(\s*([1-9][0-9]*(\.[0-9]+)?)\s*\)'
 )
 RE_HARDCODED_MODEL = re.compile(
-    r'(?i)\b(?:model|engine)\s*=\s*["\'](gpt-[34][a-z0-9._-]*|claude-[23][a-z0-9._-]*|text-davinci[a-z0-9._-]*|gemini-1\.[05][a-z0-9._-]*)["\']'
+    r'(?i)(?:\b(?:model|engine)(?:\s*:\s*[A-Za-z0-9_.\[\]\s|]+)?\s*[:=]\s*|["\']model["\']\s*:\s*|\bDEFAULT_[A-Z0-9_]*MODEL\s*=\s*)["\']'
+    r'(gpt-[345o][a-z0-9._-]*|claude-(?:[234]|3-[57]|sonnet|opus|haiku)[a-z0-9._-]*|'
+    r'text-davinci[a-z0-9._-]*|gemini-[123]\.[05][a-z0-9._-]*|'
+    r'qwen[0-9.a-z_-]*:[0-9.a-z_-]+|llama[0-9.a-z_-]*:[0-9.a-z_-]+|'
+    r'deepseek-[a-z0-9._:-]+|mistral-[a-z0-9._:-]+|d1:[0-9a-z._-]+)["\']'
 )
 RE_HARDCODED_DISPLAY = re.compile(
     r'(?i)(?:DISPLAY\s*[:=]\s*["\']:[0-9]+(\.[0-9]+)?["\']|--display\s+["\']:[0-9]+["\'])'
 )
 RE_HARDCODED_CUDA = re.compile(
     r'["\']cuda:[0-9]+["\']'
+)
+RE_REGEX_STEMMER = re.compile(
+    r're\.sub\(\s*r?["\']\(\?:[a-z|]{10,}\)\$["\']'
+)
+NL_MARKER_TOKENS = (
+    "otworz", "uruchom", "wylacz", "wlacz", "pokaz", "zrob", "znajdz", "szukaj",
+    "wykonaj", "zrealizuj", "przerob", "obsluz", "napraw", "sprawdz", "zbadaj",
+    "play", "open", "close", "start", "stop", "help", "execute",
 )
 
 
@@ -251,6 +291,9 @@ class CodeSmellVisitor(ast.NodeVisitor):
         self.violations: list[Violation] = []
         self._elif_chain_members: set[ast.If] = set()
         self._verified_argv: set[ast.AST] = set()
+        self._inner_subscripts: set[ast.Subscript] = set()
+        self._inner_binops: set[ast.BinOp] = set()
+        self._seen_func_bodies: dict[str, tuple[str, int]] = {}
 
     def visit_Module(self, node: ast.Module) -> None:
         # Resolve only top-level stdlib imports with a unique binding across
@@ -359,7 +402,7 @@ class CodeSmellVisitor(ast.NodeVisitor):
         self.generic_visit(node)
 
     def _check_literal_collection(self, node: ast.AST, col_type: str) -> None:
-        if node in self._verified_argv:
+        if node in self._verified_argv or is_test_or_fixture_path(self.role_path):
             return
         elts = getattr(node, "elts", [])
         if len(elts) > 5:
@@ -386,6 +429,26 @@ class CodeSmellVisitor(ast.NodeVisitor):
                     )
 
     def visit_If(self, node: ast.If) -> None:
+        # Check for hardcoded ticket/issue ID branching in business logic (NOHARDCODE-004)
+        if not is_test_or_fixture_path(self.role_path):
+            ticket_literals = [
+                c.value for c in ast.walk(node.test)
+                if isinstance(c, ast.Constant) and isinstance(c.value, str)
+                and RE_TICKET_ID_LITERAL.fullmatch(c.value.strip())
+            ]
+            if ticket_literals:
+                severity = "warning" if self.profile != "strict" else "error"
+                self.violations.append(
+                    Violation(
+                        rule_id="NOHARDCODE-004",
+                        file_path=self.filename,
+                        line_number=node.lineno,
+                        severity=severity,
+                        message=f"Hardcoded ticket/issue ID branching ({', '.join(ticket_literals[:3])}) couples logic to specific records",
+                        replacement="Declarative label/metadata policy expression (wellmanifest/policy-dsl)",
+                    )
+                )
+
         if node in self._elif_chain_members:
             # Still visit the body: it may contain an independent nested chain.
             self.generic_visit(node)
@@ -416,6 +479,166 @@ class CodeSmellVisitor(ast.NodeVisitor):
 
         self.generic_visit(node)
 
+    def visit_Dict(self, node: ast.Dict) -> None:
+        # NOHARDCODE-016: Static inflection/typo alias dictionary mapping >= 6 surface variants to <= 2 targets
+        if not is_test_or_fixture_path(self.role_path) and len(node.keys) >= 6:
+            str_keys = [k.value for k in node.keys if isinstance(k, ast.Constant) and isinstance(k.value, str)]
+            const_vals = [
+                v.value for v in node.values
+                if isinstance(v, ast.Constant) and isinstance(v.value, (str, int))
+            ]
+            if len(str_keys) >= 6 and len(const_vals) == len(node.keys):
+                distinct_vals = {repr(v) for v in const_vals}
+                if 1 <= len(distinct_vals) <= 2 and all(re.fullmatch(r"[a-zA-ZąćęłńóśźżĄĆĘŁŃÓŚŹŻ]{3,}", k) for k in str_keys):
+                    severity = "warning" if self.profile != "strict" else "error"
+                    self.violations.append(
+                        Violation(
+                            rule_id="NOHARDCODE-016",
+                            file_path=self.filename,
+                            line_number=node.lineno,
+                            severity=severity,
+                            message=f"Static inflection/typo alias map ({len(str_keys)} surface keys -> {len(distinct_vals)} target(s))",
+                            replacement="Bounded Levenshtein / phonetic matcher or semantic router (wellmanifest/nl-dsl-llm)",
+                        )
+                    )
+        self.generic_visit(node)
+
+    def visit_Subscript(self, node: ast.Subscript) -> None:
+        # NOHARDCODE-012: Deeply chained constant string dictionary subscripts (depth >= 4)
+        if node not in self._inner_subscripts and not is_test_or_fixture_path(self.role_path):
+            depth = 0
+            curr: ast.AST = node
+            while isinstance(curr, ast.Subscript):
+                sl = curr.slice
+                if isinstance(sl, ast.Constant) and isinstance(sl.value, str):
+                    depth += 1
+                    if isinstance(curr.value, ast.Subscript):
+                        self._inner_subscripts.add(curr.value)
+                    curr = curr.value
+                else:
+                    break
+            if depth >= 4:
+                severity = "warning" if self.profile != "strict" else "error"
+                self.violations.append(
+                    Violation(
+                        rule_id="NOHARDCODE-012",
+                        file_path=self.filename,
+                        line_number=node.lineno,
+                        severity=severity,
+                        message=f"Rigid chained dictionary subscript traversal ({depth} levels) is fragile to schema changes",
+                        replacement="Schema-tolerant extractor or typed contract validator (wellmanifest/nl-dsl-llm)",
+                    )
+                )
+        self.generic_visit(node)
+
+    def _check_imperative_retry_loop(self, node: ast.AST) -> None:
+        # NOHARDCODE-014: Imperative loop with fixed sleep delay instead of declarative backoff/DAG
+        if is_test_or_fixture_path(self.role_path):
+            return
+        for child in ast.walk(node):
+            if isinstance(child, ast.Call) and isinstance(child.func, ast.Attribute):
+                if (isinstance(child.func.value, ast.Name)
+                        and child.func.value.id in {"time", "asyncio"}
+                        and child.func.attr == "sleep"
+                        and child.args
+                        and isinstance(child.args[0], ast.Constant)
+                        and isinstance(child.args[0].value, (int, float))):
+                    severity = "warning" if self.profile != "strict" else "error"
+                    self.violations.append(
+                        Violation(
+                            rule_id="NOHARDCODE-014",
+                            file_path=self.filename,
+                            line_number=getattr(node, "lineno", 1),
+                            severity=severity,
+                            message="Imperative retry/polling loop with fixed sleep delay",
+                            replacement="Declarative DAG workflow (wellmanifest/poa) or adaptive exponential jitter backoff",
+                        )
+                    )
+                    break
+
+    def visit_For(self, node: ast.For) -> None:
+        self._check_imperative_retry_loop(node)
+        self.generic_visit(node)
+
+    def visit_While(self, node: ast.While) -> None:
+        self._check_imperative_retry_loop(node)
+        self.generic_visit(node)
+
+    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+        self._check_duplicate_function(node)
+        self.generic_visit(node)
+
+    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
+        self._check_duplicate_function(node)
+        self.generic_visit(node)
+
+    def _check_duplicate_function(self, node: ast.FunctionDef | ast.AsyncFunctionDef) -> None:
+        # NOHARDCODE-010: Intra-file duplicate non-trivial function AST bodies
+        if is_test_or_fixture_path(self.role_path):
+            return
+        body = list(node.body)
+        if body and isinstance(body[0], ast.Expr) and isinstance(body[0].value, ast.Constant) and isinstance(body[0].value.value, str):
+            body = body[1:]
+        if len(body) < 4:
+            return
+        sig = "|".join(ast.dump(stmt, annotate_fields=True, include_attributes=False) for stmt in body)
+        prev = self._seen_func_bodies.get(sig)
+        if prev is not None:
+            prev_name, prev_line = prev
+            severity = "warning" if self.profile != "strict" else "error"
+            self.violations.append(
+                Violation(
+                    rule_id="NOHARDCODE-010",
+                    file_path=self.filename,
+                    line_number=node.lineno,
+                    severity=severity,
+                    message=f"Function '{node.name}' duplicates AST body of '{prev_name}' (line {prev_line})",
+                    replacement="Extract single canonical helper (wellmanifest/ssot & wellmanifest/reuse)",
+                )
+            )
+        else:
+            self._seen_func_bodies[sig] = (node.name, node.lineno)
+
+    def visit_BinOp(self, node: ast.BinOp) -> None:
+        # NOHARDCODE-017: Hardcoded linear scoring formula (e.g. 0.7 * urgency + 0.3 * impact)
+        if (node not in self._inner_binops
+                and not is_test_or_fixture_path(self.role_path)
+                and isinstance(node.op, (ast.Add, ast.Sub))):
+            terms: list[ast.AST] = []
+            stack: list[ast.AST] = [node]
+            while stack:
+                curr = stack.pop()
+                if isinstance(curr, ast.BinOp) and isinstance(curr.op, (ast.Add, ast.Sub)):
+                    self._inner_binops.add(curr)
+                    stack.append(curr.left)
+                    stack.append(curr.right)
+                else:
+                    terms.append(curr)
+            weighted_terms = 0
+            for term in terms:
+                if isinstance(term, ast.BinOp) and isinstance(term.op, ast.Mult):
+                    sides = (term.left, term.right)
+                    has_float_weight = any(
+                        isinstance(s, ast.Constant) and isinstance(s.value, float) and not isinstance(s.value, bool)
+                        for s in sides
+                    )
+                    has_var = any(not isinstance(s, ast.Constant) for s in sides)
+                    if has_float_weight and has_var:
+                        weighted_terms += 1
+            if weighted_terms >= 2:
+                severity = "warning" if self.profile != "strict" else "error"
+                self.violations.append(
+                    Violation(
+                        rule_id="NOHARDCODE-017",
+                        file_path=self.filename,
+                        line_number=node.lineno,
+                        severity=severity,
+                        message=f"Hardcoded linear scoring formula with {weighted_terms} static float weights",
+                        replacement="Thompson Sampling / adaptive ranking governor or declarative scoring policy",
+                    )
+                )
+        self.generic_visit(node)
+
     def visit_Call(self, node: ast.Call) -> None:
         # Check for raw print() calls (NOHARDCODE-007)
         # Exclude CLI tools, scripts, and test runners where print is standard CLI output
@@ -432,9 +655,21 @@ class CodeSmellVisitor(ast.NodeVisitor):
                 )
             )
 
-        # Check for coordinate click calls
-        if isinstance(node.func, ast.Attribute) and node.func.attr in {"click", "moveTo", "dragTo"}:
-            if len(node.args) >= 2 and all(isinstance(a, ast.Constant) and isinstance(a.value, int) for a in node.args[:2]):
+        # Check for coordinate click calls (positional or keyword x=..., y=...) (NOHARDCODE-002)
+        if isinstance(node.func, ast.Attribute) and node.func.attr in {"click", "moveTo", "dragTo", "mouse_down", "mouse_up"}:
+            coords: Optional[tuple[int, int]] = None
+            if len(node.args) >= 2 and all(isinstance(a, ast.Constant) and isinstance(a.value, int) and not isinstance(a.value, bool) for a in node.args[:2]):
+                coords = (node.args[0].value, node.args[1].value)
+            else:
+                kw_map = {
+                    kw.arg: kw.value.value
+                    for kw in node.keywords
+                    if kw.arg in {"x", "y"} and isinstance(kw.value, ast.Constant)
+                    and isinstance(kw.value.value, int) and not isinstance(kw.value.value, bool)
+                }
+                if "x" in kw_map and "y" in kw_map:
+                    coords = (kw_map["x"], kw_map["y"])
+            if coords is not None:
                 severity = "warning" if self.profile != "strict" else "error"
                 self.violations.append(
                     Violation(
@@ -442,10 +677,67 @@ class CodeSmellVisitor(ast.NodeVisitor):
                         file_path=self.filename,
                         line_number=node.lineno,
                         severity=severity,
-                        message=f"Hardcoded pixel coordinates ({node.args[0].value}, {node.args[1].value}) in {node.func.attr}()",
+                        message=f"Hardcoded pixel coordinates ({coords[0]}, {coords[1]}) in {node.func.attr}()",
                         replacement="YOLO element detection (twinerd-vision) or Tesseract OCR bounding box",
                     )
                 )
+
+        # NOHARDCODE-001: Pipe-delimited NL phrase helpers (_phrases/_synonyms("a|b|c|d|e|f") or "a|b|...".split("|"))
+        pipe_str: Optional[str] = None
+        if not is_test_or_fixture_path(self.role_path):
+            if (isinstance(node.func, ast.Name)
+                    and node.func.id not in {"compile", "search", "match", "fullmatch", "sub", "split"}
+                    and len(node.args) == 1
+                    and isinstance(node.args[0], ast.Constant)
+                    and isinstance(node.args[0].value, str)):
+                pipe_str = node.args[0].value
+            elif (isinstance(node.func, ast.Attribute) and node.func.attr == "split"
+                  and isinstance(node.func.value, ast.Constant) and isinstance(node.func.value.value, str)
+                  and node.args and isinstance(node.args[0], ast.Constant) and node.args[0].value == "|"):
+                pipe_str = node.func.value.value
+        if pipe_str is not None:
+            parts = [p.strip() for p in pipe_str.split("|") if p.strip()]
+            if len(parts) > 5:
+                has_spaces = any(" " in p for p in parts)
+                has_non_ascii = any(any(ord(c) > 127 for c in p) for p in parts)
+                has_nl_markers = any(any(tok in p.lower() for tok in NL_MARKER_TOKENS) for p in parts)
+                if has_spaces or has_non_ascii or has_nl_markers:
+                    severity = "warning" if self.profile != "strict" else "error"
+                    self.violations.append(
+                        Violation(
+                            rule_id="NOHARDCODE-001",
+                            file_path=self.filename,
+                            line_number=node.lineno,
+                            severity=severity,
+                            message=f"Pipe-delimited string of {len(parts)} natural language phrases indicates hardcoded intent dispatch",
+                            replacement="Declarative wellmanifest/nl-api-llm or wellmanifest/nl-uri-dsl-llm catalog",
+                        )
+                    )
+
+        # NOHARDCODE-001: Regex keyword alternation with >= 6 NL words in re.compile/search/match/fullmatch
+        if (isinstance(node.func, ast.Attribute)
+                and isinstance(node.func.value, ast.Name) and node.func.value.id == "re"
+                and node.func.attr in {"compile", "search", "match", "fullmatch"}
+                and node.args and isinstance(node.args[0], ast.Constant) and isinstance(node.args[0].value, str)):
+            pattern_text = node.args[0].value
+            for group_match in re.finditer(r"\((?:\?:)?([a-zA-ZąćęłńóśźżĄĆĘŁŃÓŚŹŻ0-9_\s|]{18,})\)", pattern_text):
+                branches = [b.strip() for b in group_match.group(1).split("|") if b.strip()]
+                word_branches = [b for b in branches if re.fullmatch(r"[a-zA-ZąćęłńóśźżĄĆĘŁŃÓŚŹŻ]{3,}(?:\\[a-zA-Z*+]+)?", b)]
+                if len(word_branches) >= 6:
+                    has_nl = any(any(ord(c) > 127 for c in b) or b.lower() in NL_MARKER_TOKENS for b in word_branches)
+                    if has_nl:
+                        severity = "warning" if self.profile != "strict" else "error"
+                        self.violations.append(
+                            Violation(
+                                rule_id="NOHARDCODE-001",
+                                file_path=self.filename,
+                                line_number=node.lineno,
+                                severity=severity,
+                                message=f"Regex alternation of {len(word_branches)} natural language keywords indicates hardcoded intent matching",
+                                replacement="wellmanifest/nl-uri-dsl-llm semantic router or declarative intent catalog",
+                            )
+                        )
+                        break
 
         self.generic_visit(node)
 
@@ -538,6 +830,34 @@ def scan_file_content(
                         replacement="AES-256-GCM authenticated envelope (wellmanifest/secrets)",
                     )
                 )
+        elif not _is_comment(line, path):
+            m_tok = RE_BEARER_OR_TOKEN_LITERAL.search(line)
+            if m_tok and not any(k in m_tok.group(0).lower() for k in ("dummy", "example", "mock", "placeholder", "test")):
+                violations.append(
+                    Violation(
+                        rule_id="NOHARDCODE-005",
+                        file_path=str(path),
+                        line_number=idx,
+                        severity="error" if profile in {"strict", "balanced"} else "warning",
+                        message="Potential plaintext API/bearer token literal detected",
+                        replacement="AES-256-GCM authenticated envelope (wellmanifest/secrets)",
+                    )
+                )
+
+        # NOHARDCODE-002 (non-Python line rule): Hardcoded pixel coordinates
+        if path.suffix.lower() != ".py" and not _is_comment(line, path):
+            m_coord = RE_HARDCODED_COORDINATES.search(line)
+            if m_coord:
+                violations.append(
+                    Violation(
+                        rule_id="NOHARDCODE-002",
+                        file_path=str(path),
+                        line_number=idx,
+                        severity="warning" if profile != "strict" else "error",
+                        message=f"Hardcoded pixel coordinates ({m_coord.group(2)}, {m_coord.group(3)}) in {m_coord.group(1)}()",
+                        replacement="YOLO element detection (twinerd-vision) or Tesseract OCR bounding box",
+                    )
+                )
 
         # NOHARDCODE-006: Hardcoded localhost ports
         m_port = RE_HARDCODED_PORT.search(line) or RE_PRIVATE_HOST.search(line)
@@ -576,6 +896,52 @@ def scan_file_content(
         # NOHARDCODE-011: Hardcoded static sleep delays
         is_test_or_fixture = is_test_or_fixture_path(str(path) if role_path is None else role_path)
         if not is_test_or_fixture and not _is_comment(line, path):
+            # NOHARDCODE-003: Brittle positional XPath/CSS UI selectors
+            m_sel = RE_BRITTLE_UI_SELECTOR.search(line)
+            if m_sel:
+                violations.append(
+                    Violation(
+                        rule_id="NOHARDCODE-003",
+                        file_path=str(path),
+                        line_number=idx,
+                        severity="error" if profile == "strict" else "warning",
+                        message=f"Brittle positional UI selector '{m_sel.group(0)}'",
+                        replacement="Tesseract OCR text localization or semantic accessibility label",
+                    )
+                )
+
+            # NOHARDCODE-008: Hardcoded PII email literals outside anonymized domains
+            if path.name not in {"pyproject.toml", "package.json", "Cargo.toml"}:
+                for m_email in RE_HARDCODED_PII_EMAIL.finditer(line):
+                    domain = m_email.group(2).lower()
+                    if (domain not in SAFE_EMAIL_DOMAINS
+                            and not domain.endswith(".example.com")
+                            and not any(domain.endswith(tld) for tld in SAFE_EMAIL_TLDS)):
+                        violations.append(
+                            Violation(
+                                rule_id="NOHARDCODE-008",
+                                file_path=str(path),
+                                line_number=idx,
+                                severity="error" if profile == "strict" else "warning",
+                                message=f"Hardcoded email identifier '{m_email.group(1)}' outside anonymized domain",
+                                replacement="Synthetic anonymized fixture or environment identity (wellmanifest/anonym)",
+                            )
+                        )
+                        break
+
+            # NOHARDCODE-016: Regex suffix-stripping stemmer
+            if RE_REGEX_STEMMER.search(line):
+                violations.append(
+                    Violation(
+                        rule_id="NOHARDCODE-016",
+                        file_path=str(path),
+                        line_number=idx,
+                        severity="error" if profile == "strict" else "warning",
+                        message="Hardcoded regex suffix-stripping stemmer indicates brittle inflection heuristic",
+                        replacement="Bounded Levenshtein / phonetic matcher or semantic router (wellmanifest/nl-dsl-llm)",
+                    )
+                )
+
             m_sleep = RE_HARDCODED_SLEEP.search(line)
             if m_sleep:
                 dur = float(m_sleep.group(1))
@@ -594,7 +960,7 @@ def scan_file_content(
         # NOHARDCODE-013: Hardcoded model/provider bindings
         if not is_test_or_fixture and not _is_comment(line, path):
             m_model = RE_HARDCODED_MODEL.search(line)
-            if m_model:
+            if m_model and not _inside_env_default(line, m_model.start(1)):
                 violations.append(
                     Violation(
                         rule_id="NOHARDCODE-013",
@@ -697,10 +1063,11 @@ def audit_repository(
         "docs/**",
     ]
 
+    env_endpoint_sources: dict[str, tuple[str, int]] = {}
     for root, dirs, files in os.walk(target_dir):
         # Prune excluded directories in-place before traversing
         kept = []
-        for d in dirs:
+        for d in sorted(dirs):
             if (d.startswith(".") and d != ".") or d in {"node_modules", "venv", ".venv", "__pycache__", "dist", "build"}:
                 continue
             if is_excluded(str((Path(root) / d).relative_to(target_dir)), excl):
@@ -711,7 +1078,7 @@ def audit_repository(
             kept.append(d)
         dirs[:] = kept
 
-        for file_name in files:
+        for file_name in sorted(files):
             p = Path(root) / file_name
             rel = str(p.relative_to(target_dir))
             if not is_scanned_file(file_name):
@@ -724,6 +1091,28 @@ def audit_repository(
             try:
                 content = p.read_text(encoding="utf-8", errors="replace")
                 all_violations.extend(scan_file_content(p, content, profile=profile, role_path=rel))
+                if not is_test_or_fixture_path(rel):
+                    for idx, line in enumerate(content.splitlines(), start=1):
+                        if _is_comment(line, p):
+                            continue
+                        for pat in ENV_DEFAULT_PATTERNS:
+                            for m_env in pat.finditer(line):
+                                default_val = m_env.group("default").strip("\"'`")
+                                if RE_HARDCODED_PORT.search(default_val) or RE_PRIVATE_HOST.search(default_val):
+                                    prev = env_endpoint_sources.get(default_val)
+                                    if prev is not None and prev[0] != rel:
+                                        all_violations.append(
+                                            Violation(
+                                                rule_id="NOHARDCODE-010",
+                                                file_path=str(p),
+                                                line_number=idx,
+                                                severity="error" if profile == "strict" else "warning",
+                                                message=f"Duplicate environment endpoint default '{default_val}' across files (already defined in {prev[0]}:{prev[1]})",
+                                                replacement="Single configuration source binding (wellmanifest/ssot SSOT-CONFIG-001)",
+                                            )
+                                        )
+                                    elif prev is None:
+                                        env_endpoint_sources[default_val] = (rel, idx)
             except Exception:
                 pass
 
